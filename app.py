@@ -840,7 +840,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # Sidebar: Shared Context Panel (sticky)
+        # Sidebar: Shared Context Panel (sticky)
     with st.sidebar:
         st.subheader("📍 Shared Context")
         
@@ -880,17 +880,38 @@ def main():
         
         st.divider()
         
-        # Quick navigation
-        st.subheader("🧭 Quick Navigation")
-        st.page_link("#mechanical-tab", label="🔧 Mechanical", icon="🔧")
-        st.page_link("#hydraulic-tab", label="💧 Hydraulic", icon="💧")
-        st.page_link("#electrical-tab", label="⚡ Electrical", icon="⚡")
-        st.page_link("#integrated-tab", label="🔗 Integrated", icon="🔗")
-    
-    # Main tab navigation
-    tab_mech, tab_hyd, tab_elec, tab_integrated = st.tabs([
-        "🔧 Mechanical", "💧 Hydraulic", "⚡ Electrical", "🔗 Integrated Summary"
-    ])
+        # ✅ FIXED: Quick Navigation (visual hint only - tabs handle navigation)
+        st.subheader("🧭 Navigasi Cepat")
+        st.markdown("""
+        <div style="background-color:#f0f2f6; padding:10px; border-radius:5px; font-size:0.9em">
+            <strong>💡 Gunakan tab di atas untuk:</strong><br><br>
+            🔧 <strong>Mechanical</strong>: Vibration analysis (12 points)<br>
+            💧 <strong>Hydraulic</strong>: Performance troubleshooting (single-point)<br>
+            ⚡ <strong>Electrical</strong>: 3-phase condition monitoring<br>
+            🔗 <strong>Integrated</strong>: Cross-domain correlation + QCDSM recommendations
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Status indicator for completed analyses
+        st.divider()
+        st.caption("📊 Status Analisis:")
+        
+        # Simple status indicators (visual only)
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            mech_done = "✅" if hasattr(st.session_state, "mech_result") else "⏳"
+            st.write(f"{mech_done} Mechanical")
+        with col_s2:
+            hyd_done = "✅" if hasattr(st.session_state, "hyd_result") else "⏳"
+            st.write(f"{hyd_done} Hydraulic")
+        
+        col_s3, col_s4 = st.columns(2)
+        with col_s3:
+            elec_done = "✅" if hasattr(st.session_state, "elec_result") else "⏳"
+            st.write(f"{elec_done} Electrical")
+        with col_s4:
+            int_done = "✅" if hasattr(st.session_state, "integrated_result") else "⏳"
+            st.write(f"{int_done} Integrated")
     
     # ========================================================================
     # TAB 1: MECHANICAL VIBRATION ANALYSIS
