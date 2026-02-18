@@ -485,6 +485,13 @@ def diagnose_hydraulic_single_point(hydraulic_calc, design_params, fluid_props,
 # ============================================================================
 
 def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
+    """
+    Diagnose electrical condition dengan mempertimbangkan:
+    1. Pengukuran electrical (voltage, current, unbalance)
+    2. Observasi visual & sensorik (temperature, noise, odor)
+    
+    ⚠️ OBSERVASI KRITIS dapat override hasil pengukuran!
+    """
     result = {
         "diagnosis": "NORMAL_ELECTRICAL",
         "confidence": 0,
@@ -494,33 +501,183 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         "details": {}
     }
     
+    # Extract calculated parameters
     voltage_unbalance = electrical_calc.get("voltage_unbalance_percent", 0)
     current_unbalance = electrical_calc.get("current_unbalance_percent", 0)
     load_estimate = electrical_calc.get("load_estimate_percent", 0)
     voltage_within_tolerance = electrical_calc.get("voltage_within_tolerance", True)
     v_avg = electrical_calc.get("v_avg", 0)
     
+    # Motor specs
     rated_voltage = motor_specs.get("rated_voltage", 400)
     
-    diagnosis, confidence, severity = classify_electrical_condition(
-        voltage_unbalance, current_unbalance, load_estimate, 
-        voltage_within_tolerance, rated_voltage, v_avg
-    )
+    # Extract observations
+    motor_temp = observations.get("motor_temperature", "Normal (<70°C)")
+    panel_condition = observations.get("panel_condition", "Normal")
+    noise_elec = observations.get("electrical_noise", "Tidak ada")
+    odor = observations.get("odor", "Tidak ada")
     
-    result["diagnosis"] = diagnosis
-    result["confidence"] = confidence
-    result["severity"] = severity
-    result["fault_type"] = "voltage" if "VOLTAGE" in diagnosis else "current" if "CURRENT" in diagnosis else "normal"
+    # ========================================================================
+    # STEP 1: Check Critical Safety Observations (Priority Override!)
+    # ========================================================================
+    # Ini adalah fault indicators yang TIDAK BOLEH diabaikan, bahkan jika 
+    # pengukuran electrical terlihat normal
+    
+    critical_fault_detected = False
+    critical_diagnosis = None
+    critical_confidence = 0
+    critical_severity = "High"
+    
+    # Arcing/buzzing → Loose connection / electrical discharge
+    if noise_elec == "Buzzing/arcing":
+        critical_fault_detected = True
+        critical_diagnosis = "ELECTRICAL_ARCING"
+        critical_confidence = 90
+        critical_severity = "High"
+        result["details"]["critical_observation"] = "Buzzing/arcing noise → electrical discharge risk"
+    
+    # Burning smell → Insulation breakdown / overheating
+    if odor == "Bau gosong":
+        critical_fault_detected = True
+        critical_diagnosis = "INSULATION_OVERHEAT"
+        critical_confidence = 95
+        critical_severity = "High"
+        result["details"]["critical_observation"] = "Burning smell → insulation breakdown risk"
+    
+    # Panel overheating → High resistance connection / overload
+    if panel_condition == "Panas berlebih":
+        critical_fault_detected = True
+        critical_diagnosis = "CONNECTION_OVERHEAT"
+        critical_confidence = 85
+        critical_severity = "High"
+        result["details"]["critical_observation"] = "Panel overheating → high resistance connection"
+    
+    # Motor very hot → Overload / bearing friction / electrical loss
+    if motor_temp == "Panas (>90°C)":
+        critical_fault_detected = True
+        critical_diagnosis = "MOTOR_OVERHEAT"
+        critical_confidence = 85
+        critical_severity = "High"
+        result["details"]["critical_observation"] = "Motor temperature >90°C → overload or internal fault"
+    
+    # Jika ada critical observation, PRIORITaskan ini di atas pengukuran
+    if critical_fault_detected:
+        result["diagnosis"] = critical_diagnosis
+        result["confidence"] = critical_confidence
+        result["severity"] = critical_severity
+        result["fault_type"] = "critical_safety"
+        result["details"]["voltage_unbalance"] = voltage_unbalance
+        result["details"]["current_unbalance"] = current_unbalance
+        result["details"]["load_estimate"] = load_estimate
+        return result
+    
+    # ========================================================================
+    # STEP 2: Standard Electrical Diagnosis (Jika tidak ada critical obs)
+    # ========================================================================
+    
+    # Under Voltage
+    if not voltage_within_tolerance and v_avg < rated_voltage:
+        severity = "High" if load_estimate > 80 else "Medium"
+        result["diagnosis"] = "UNDER_VOLTAGE"
+        result["confidence"] = 70
+        result["severity"] = severity
+        result["fault_type"] = "voltage"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate
+        }
+        return result
+    
+    # Voltage Unbalance
+    if voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_critical"]:
+        result["diagnosis"] = "VOLTAGE_UNBALANCE"
+        result["confidence"] = 75
+        result["severity"] = "High"
+        result["fault_type"] = "voltage"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate
+        }
+        return result
+    elif voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_warning"]:
+        result["diagnosis"] = "VOLTAGE_UNBALANCE"
+        result["confidence"] = 65
+        result["severity"] = "Medium"
+        result["fault_type"] = "voltage"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate
+        }
+        return result
+    
+    # Current Unbalance
+    if current_unbalance > ELECTRICAL_LIMITS["current_unbalance_critical"]:
+        result["diagnosis"] = "CURRENT_UNBALANCE"
+        result["confidence"] = 70
+        result["severity"] = "High"
+        result["fault_type"] = "current"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate
+        }
+        return result
+    elif current_unbalance > ELECTRICAL_LIMITS["current_unbalance_warning"]:
+        result["diagnosis"] = "CURRENT_UNBALANCE"
+        result["confidence"] = 60
+        result["severity"] = "Medium"
+        result["fault_type"] = "current"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate
+        }
+        return result
+    
+    # High Current with Normal Output (needs hydraulic context)
+    if load_estimate > ELECTRICAL_LIMITS["current_load_critical"]:
+        result["diagnosis"] = "HIGH_CURRENT_NORMAL_OUTPUT"
+        result["confidence"] = 55
+        result["severity"] = "Medium"
+        result["fault_type"] = "load"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate
+        }
+        return result
+    
+    # ========================================================================
+    # STEP 3: Normal Condition (dengan minor observation adjustments)
+    # ========================================================================
+    
+    # Even if measurements are normal, adjust for minor observations
+    if motor_temp == "Hangat (70-90°C)" or panel_condition == "Hangat":
+        result["diagnosis"] = "NORMAL_ELECTRICAL"
+        result["confidence"] = 85  # Reduced from 95% due to temperature concern
+        result["severity"] = "Low"
+        result["fault_type"] = "normal"
+        result["details"] = {
+            "voltage_unbalance": voltage_unbalance,
+            "current_unbalance": current_unbalance,
+            "load_estimate": load_estimate,
+            "observation_note": "Temperature elevated - monitor trend"
+        }
+        return result
+    
+    # All normal
+    result["diagnosis"] = "NORMAL_ELECTRICAL"
+    result["confidence"] = 95
+    result["severity"] = "Low"
+    result["fault_type"] = "normal"
     result["details"] = {
         "voltage_unbalance": voltage_unbalance,
         "current_unbalance": current_unbalance,
         "load_estimate": load_estimate
     }
-    
-    motor_temp = observations.get("motor_temperature", "Normal")
-    if motor_temp in ["Panas (>90°C)", "Hangat (70-90°C)"] and severity == "Low":
-        result["severity"] = "Medium"
-        result["confidence"] = min(95, result["confidence"] + 10)
     
     return result
 
