@@ -22,6 +22,18 @@ ACCEL_BASELINE = {
     "Band3 (5-16kHz)": 0.15
 }
 
+# ✅ NEW: Bearing Temperature Thresholds (API 610, API 670, SKF, NEMA MG-1)
+BEARING_TEMP_LIMITS = {
+    "normal_max": 70,        # °C - Normal operating range
+    "elevated_min": 70,      # °C - Elevated temperature warning
+    "elevated_max": 85,      # °C - Monitor intensively
+    "warning_min": 85,       # °C - Warning threshold
+    "warning_max": 95,       # °C - Schedule inspection
+    "critical_min": 95,      # °C - Critical - immediate action
+    "delta_threshold": 15,   # °C - DE vs NDE difference threshold
+    "ambient_reference": 30  # °C - Reference ambient temperature
+}
+
 # --- Hydraulic Fluid Properties (BBM Specific - Pertamina) ---
 FLUID_PROPERTIES = {
     "Pertalite (RON 90)": {
@@ -244,6 +256,89 @@ def get_electrical_recommendation(diagnosis: str, severity: str = "Medium") -> s
 
 
 # ============================================================================
+# ✅ NEW: FUNGSI TEMPERATURE ANALYSIS
+# ============================================================================
+
+def get_temperature_status(temp_celsius):
+    """
+    Determine temperature status based on API 610, API 670, SKF thresholds
+    Returns: status string, color code, severity adjustment
+    """
+    if temp_celsius < BEARING_TEMP_LIMITS["normal_max"]:
+        return "Normal", "🟢", 0
+    elif temp_celsius < BEARING_TEMP_LIMITS["elevated_max"]:
+        return "Elevated", "🟡", 0
+    elif temp_celsius < BEARING_TEMP_LIMITS["warning_max"]:
+        return "Warning", "🟠", 1
+    else:
+        return "Critical", "🔴", 2
+
+
+def calculate_temperature_confidence_adjustment(temp_dict, diagnosis_consistent):
+    """
+    Calculate confidence adjustment based on bearing temperatures
+    
+    Args:
+        temp_dict: Dict with Pump_DE, Pump_NDE, Motor_DE, Motor_NDE temperatures
+        diagnosis_consistent: Boolean - whether temperature supports the diagnosis
+    
+    Returns:
+        confidence_adjustment: int (-10 to +20)
+        temperature_notes: list of strings
+    """
+    adjustment = 0
+    notes = []
+    
+    # Check each bearing temperature
+    for location, temp in temp_dict.items():
+        if temp is None or temp == 0:
+            continue
+            
+        status, color, sev_level = get_temperature_status(temp)
+        
+        if status == "Critical":
+            if diagnosis_consistent:
+                adjustment += 20
+                notes.append(f"⚠️ {location}: {temp}°C (Critical) - Strong thermal confirmation")
+            else:
+                adjustment -= 10
+                notes.append(f"⚠️ {location}: {temp}°C (Critical) - Review required")
+        elif status == "Warning":
+            if diagnosis_consistent:
+                adjustment += 15
+                notes.append(f"⚠️ {location}: {temp}°C (Warning) - Thermal confirmation")
+            else:
+                adjustment -= 5
+                notes.append(f"⚠️ {location}: {temp}°C (Warning) - Monitor closely")
+        elif status == "Elevated":
+            if diagnosis_consistent:
+                adjustment += 10
+                notes.append(f"📈 {location}: {temp}°C (Elevated) - Early thermal indication")
+            else:
+                notes.append(f"📈 {location}: {temp}°C (Elevated) - Monitor trend")
+    
+    # Check temperature differential (DE vs NDE)
+    if temp_dict.get("Pump_DE") and temp_dict.get("Pump_NDE"):
+        delta_pump = abs(temp_dict["Pump_DE"] - temp_dict["Pump_NDE"])
+        if delta_pump > BEARING_TEMP_LIMITS["delta_threshold"]:
+            adjustment += 5
+            notes.append(f"🔍 Pump DE-NDE ΔT: {delta_pump}°C (>15°C) - Localized fault indicated")
+    
+    if temp_dict.get("Motor_DE") and temp_dict.get("Motor_NDE"):
+        delta_motor = abs(temp_dict["Motor_DE"] - temp_dict["Motor_NDE"])
+        if delta_motor > BEARING_TEMP_LIMITS["delta_threshold"]:
+            adjustment += 5
+            notes.append(f"🔍 Motor DE-NDE ΔT: {delta_motor}°C (>15°C) - Localized fault indicated")
+    
+    # Check if motor temperature > pump temperature (electrical origin indicator)
+    if temp_dict.get("Motor_DE") and temp_dict.get("Pump_DE"):
+        if temp_dict["Motor_DE"] > temp_dict["Pump_DE"] + 10:
+            notes.append("⚡ Motor DE > Pump DE - Possible electrical origin")
+    
+    return min(20, max(-10, adjustment)), notes
+
+
+# ============================================================================
 # FUNGSI PERHITUNGAN - HYDRAULIC DOMAIN
 # ============================================================================
 
@@ -337,17 +432,26 @@ def classify_electrical_condition(voltage_unbalance, current_unbalance,
 
 
 # ============================================================================
-# FUNGSI DIAGNOSA - MECHANICAL DOMAIN
+# FUNGSI DIAGNOSA - MECHANICAL DOMAIN (UPDATED WITH TEMPERATURE)
 # ============================================================================
 
-def diagnose_single_point_mechanical(peaks, bands, rpm_hz, point, overall_vel, has_fft: bool = True):
+def diagnose_single_point_mechanical(peaks, bands, rpm_hz, point, overall_vel, 
+                                      has_fft: bool = True, bearing_temp=None):
     result = {
         "diagnosis": "Normal",
         "confidence": 0,
         "severity": "Low",
         "fault_type": None,
-        "domain": "mechanical"
+        "domain": "mechanical",
+        "temperature_status": None,
+        "temperature_notes": []
     }
+    
+    # ✅ NEW: Add temperature status to result
+    if bearing_temp is not None and bearing_temp > 0:
+        temp_status, temp_color, temp_sev = get_temperature_status(bearing_temp)
+        result["temperature_status"] = temp_status
+        result["temperature_notes"].append(f"Bearing Temp: {bearing_temp}°C ({temp_status})")
     
     if has_fft:
         if "Axial" not in point:
@@ -393,6 +497,9 @@ def diagnose_single_point_mechanical(peaks, bands, rpm_hz, point, overall_vel, h
     if b3 > 2.0 * base3 and b2 < 1.5 * base2 and b1 < 1.5 * base1:
         result["diagnosis"] = "BEARING_EARLY"
         conf_boost = 10 if has_fft else 0
+        # ✅ NEW: Add temperature confidence boost for bearing faults
+        if bearing_temp and bearing_temp > BEARING_TEMP_LIMITS["elevated_min"]:
+            conf_boost += 10
         result["confidence"] = min(85, 60 + int((b3/base3 - 2) * 10) + conf_boost)
         result["severity"] = "Medium" if b3 > 3*base3 else "Low"
         result["fault_type"] = "high_freq"
@@ -401,6 +508,9 @@ def diagnose_single_point_mechanical(peaks, bands, rpm_hz, point, overall_vel, h
     if b2 > 2.0 * base2 and b3 > 1.5 * base3 and b1 < 1.5 * base1:
         result["diagnosis"] = "BEARING_DEVELOPED"
         conf_boost = 10 if has_fft else 0
+        # ✅ NEW: Add temperature confidence boost for bearing faults
+        if bearing_temp and bearing_temp > BEARING_TEMP_LIMITS["elevated_min"]:
+            conf_boost += 10
         result["confidence"] = min(90, 70 + int((b2/base2 - 2) * 8) + conf_boost)
         result["severity"] = "High" if b2 > 3*base2 else "Medium"
         result["fault_type"] = "high_freq"
@@ -521,7 +631,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
     Diagnose electrical condition dengan mempertimbangkan:
     1. Pengukuran electrical (voltage, current, unbalance)
     2. Observasi visual & sensorik (temperature, noise, odor)
-    
     ⚠️ OBSERVASI KRITIS dapat override hasil pengukuran!
     """
     result = {
@@ -552,15 +661,11 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
     # ========================================================================
     # STEP 1: Check Critical Safety Observations (Priority Override!)
     # ========================================================================
-    # Ini adalah fault indicators yang TIDAK BOLEH diabaikan, bahkan jika 
-    # pengukuran electrical terlihat normal
-    
     critical_fault_detected = False
     critical_diagnosis = None
     critical_confidence = 0
     critical_severity = "High"
     
-    # Arcing/buzzing → Loose connection / electrical discharge
     if noise_elec == "Buzzing/arcing":
         critical_fault_detected = True
         critical_diagnosis = "ELECTRICAL_ARCING"
@@ -568,7 +673,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         critical_severity = "High"
         result["details"]["critical_observation"] = "Buzzing/arcing noise → electrical discharge risk"
     
-    # Burning smell → Insulation breakdown / overheating
     if odor == "Bau gosong":
         critical_fault_detected = True
         critical_diagnosis = "INSULATION_OVERHEAT"
@@ -576,7 +680,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         critical_severity = "High"
         result["details"]["critical_observation"] = "Burning smell → insulation breakdown risk"
     
-    # Panel overheating → High resistance connection / overload
     if panel_condition == "Panas berlebih":
         critical_fault_detected = True
         critical_diagnosis = "CONNECTION_OVERHEAT"
@@ -584,7 +687,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         critical_severity = "High"
         result["details"]["critical_observation"] = "Panel overheating → high resistance connection"
     
-    # Motor very hot → Overload / bearing friction / electrical loss
     if motor_temp == "Panas (>90°C)":
         critical_fault_detected = True
         critical_diagnosis = "MOTOR_OVERHEAT"
@@ -592,7 +694,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         critical_severity = "High"
         result["details"]["critical_observation"] = "Motor temperature >90°C → overload or internal fault"
     
-    # Jika ada critical observation, PRIORITaskan ini di atas pengukuran
     if critical_fault_detected:
         result["diagnosis"] = critical_diagnosis
         result["confidence"] = critical_confidence
@@ -604,10 +705,8 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         return result
     
     # ========================================================================
-    # STEP 2: Standard Electrical Diagnosis (Jika tidak ada critical obs)
+    # STEP 2: Standard Electrical Diagnosis
     # ========================================================================
-    
-    # Under Voltage
     if not voltage_within_tolerance and v_avg < rated_voltage:
         severity = "High" if load_estimate > 80 else "Medium"
         result["diagnosis"] = "UNDER_VOLTAGE"
@@ -621,7 +720,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         }
         return result
     
-    # Voltage Unbalance
     if voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_critical"]:
         result["diagnosis"] = "VOLTAGE_UNBALANCE"
         result["confidence"] = 75
@@ -645,7 +743,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         }
         return result
     
-    # Current Unbalance
     if current_unbalance > ELECTRICAL_LIMITS["current_unbalance_critical"]:
         result["diagnosis"] = "CURRENT_UNBALANCE"
         result["confidence"] = 70
@@ -669,7 +766,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         }
         return result
     
-    # High Current with Normal Output (needs hydraulic context)
     if load_estimate > ELECTRICAL_LIMITS["current_load_critical"]:
         result["diagnosis"] = "HIGH_CURRENT_NORMAL_OUTPUT"
         result["confidence"] = 55
@@ -685,11 +781,9 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
     # ========================================================================
     # STEP 3: Normal Condition (dengan minor observation adjustments)
     # ========================================================================
-    
-    # Even if measurements are normal, adjust for minor observations
     if motor_temp == "Hangat (70-90°C)" or panel_condition == "Hangat":
         result["diagnosis"] = "NORMAL_ELECTRICAL"
-        result["confidence"] = 85  # Reduced from 95% due to temperature concern
+        result["confidence"] = 85
         result["severity"] = "Low"
         result["fault_type"] = "normal"
         result["details"] = {
@@ -700,7 +794,6 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
         }
         return result
     
-    # All normal
     result["diagnosis"] = "NORMAL_ELECTRICAL"
     result["confidence"] = 95
     result["severity"] = "Low"
@@ -715,10 +808,11 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
 
 
 # ============================================================================
-# CROSS-DOMAIN INTEGRATION LOGIC
+# CROSS-DOMAIN INTEGRATION LOGIC (UPDATED WITH TEMPERATURE)
 # ============================================================================
 
-def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, shared_context):
+def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, 
+                                      shared_context, temp_data=None):
     system_result = {
         "diagnosis": "Normal - All Domains",
         "confidence": 0,
@@ -726,7 +820,8 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, share
         "location": "N/A",
         "domain_breakdown": {},
         "correlation_notes": [],
-        "qcsm_recommendations": {}
+        "qcdsm_recommendations": {},
+        "temperature_notes": []
     }
     
     system_result["domain_breakdown"] = {
@@ -746,6 +841,7 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, share
     correlation_bonus = 0
     correlated_faults = []
     
+    # Existing correlation patterns
     if (elec_fault == "voltage" and mech_result.get("diagnosis") in ["MISALIGNMENT", "LOOSENESS"] 
         and hyd_result.get("details", {}).get("deviations", {}).get("head_dev", 0) < -5):
         correlation_bonus += 15
@@ -764,6 +860,25 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, share
         correlated_faults.append("High electrical input + low hydraulic output → internal mechanical/hydraulic loss")
         system_result["diagnosis"] = "Internal Loss Investigation Required"
     
+    # ✅ NEW: Temperature-based correlation patterns
+    if temp_data:
+        temp_adjustment, temp_notes = calculate_temperature_confidence_adjustment(
+            temp_data, 
+            diagnosis_consistent=(mech_fault is not None and mech_fault != "normal")
+        )
+        correlation_bonus += temp_adjustment
+        system_result["temperature_notes"] = temp_notes
+        
+        # Temperature pattern correlations
+        if temp_data.get("Pump_DE") and temp_data.get("Pump_NDE"):
+            if abs(temp_data["Pump_DE"] - temp_data["Pump_NDE"]) > BEARING_TEMP_LIMITS["delta_threshold"]:
+                correlated_faults.append(f"Pump DE-NDE ΔT >15°C → Localized fault on DE bearing")
+        
+        if temp_data.get("Motor_DE") and temp_data.get("Pump_DE"):
+            if temp_data["Motor_DE"] > temp_data["Pump_DE"] + 10:
+                correlated_faults.append("Motor DE > Pump DE → Possible electrical origin")
+    
+    # Severity determination (take highest)
     severities = [mech_sev, hyd_sev, elec_sev]
     if "High" in severities:
         system_result["severity"] = "High"
@@ -772,20 +887,30 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, share
     else:
         system_result["severity"] = "Low"
     
+    # ✅ NEW: Upgrade severity if critical temperature
+    if temp_data:
+        for temp in temp_data.values():
+            if temp and temp > BEARING_TEMP_LIMITS["critical_min"]:
+                system_result["severity"] = "High"
+                correlated_faults.append("⚠️ Critical bearing temperature detected")
+                break
+    
+    # Confidence calculation
     confidences = [r.get("confidence", 0) for r in [mech_result, hyd_result, elec_result] if r.get("confidence", 0) > 0]
     base_confidence = np.mean(confidences) if confidences else 0
     system_result["confidence"] = min(95, int(base_confidence + correlation_bonus))
     
     system_result["correlation_notes"] = correlated_faults if correlated_faults else ["No strong cross-domain correlation detected"]
     
-    system_result["qcsm_recommendations"] = generate_qcdsm_recommendations(
-        mech_result, hyd_result, elec_result, system_result["severity"], shared_context
+    system_result["qcdsm_recommendations"] = generate_qcdsm_recommendations(
+        mech_result, hyd_result, elec_result, system_result["severity"], shared_context, temp_data
     )
     
     return system_result
 
 
-def generate_qcdsm_recommendations(mech_result, hyd_result, elec_result, overall_severity, context):
+def generate_qcdsm_recommendations(mech_result, hyd_result, elec_result, 
+                                    overall_severity, context, temp_data=None):
     recommendations = {
         "Quality": [],
         "Cost": [],
@@ -805,6 +930,12 @@ def generate_qcdsm_recommendations(mech_result, hyd_result, elec_result, overall
         recommendations["Quality"].append("Verifikasi electrical supply quality di MCC sebelum operasi lanjutan")
     if not recommendations["Quality"]:
         recommendations["Quality"].append("Continue routine monitoring per maintenance plan")
+    
+    # ✅ NEW: Add temperature-based recommendations
+    if temp_data:
+        for location, temp in temp_data.items():
+            if temp and temp > BEARING_TEMP_LIMITS["warning_min"]:
+                recommendations["Quality"].append(f"⚠️ {location} temperature {temp}°C - Verify lubrication & alignment")
     
     if overall_severity == "High":
         recommendations["Cost"].append("Estimasi cost of failure vs cost of repair untuk prioritas tindakan")
@@ -827,6 +958,13 @@ def generate_qcdsm_recommendations(mech_result, hyd_result, elec_result, overall
         recommendations["Safety"].append("Pastikan electrical work dilakukan oleh personnel bersertifikat")
     if mech_result.get("severity") == "High":
         recommendations["Safety"].append("Verifikasi mechanical integrity sebelum continue operation")
+    
+    # ✅ NEW: Add temperature-based safety recommendations
+    if temp_data:
+        for location, temp in temp_data.items():
+            if temp and temp > BEARING_TEMP_LIMITS["critical_min"]:
+                recommendations["Safety"].append(f"🔴 {location}: {temp}°C - Evaluate immediate shutdown")
+    
     if not recommendations["Safety"]:
         recommendations["Safety"].append("Tidak ada immediate safety risk teridentifikasi")
     
@@ -839,16 +977,28 @@ def generate_qcdsm_recommendations(mech_result, hyd_result, elec_result, overall
 
 
 # ============================================================================
-# REPORT GENERATION
+# REPORT GENERATION (UPDATED WITH TEMPERATURE)
 # ============================================================================
 
-def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data, elec_data, integrated_result):
+def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data, 
+                                 elec_data, integrated_result, temp_data=None):
     lines = []
     lines.append(f"MULTI-DOMAIN PUMP DIAGNOSTIC REPORT - {machine_id.upper()}")
     lines.append(f"Generated: {timestamp}")
     lines.append(f"RPM: {rpm} | 1x RPM: {rpm/60:.2f} Hz")
     lines.append(f"Standards: ISO 10816-3/7 (Mech) | API 610 (Hyd) | NEMA MG-1 (Elec)")
     lines.append("")
+    
+    # ✅ NEW: Add temperature section
+    if temp_data:
+        lines.append("=== BEARING TEMPERATURE ===")
+        lines.append(f"Pump_DE: {temp_data.get('Pump_DE', 'N/A')}°C | Pump_NDE: {temp_data.get('Pump_NDE', 'N/A')}°C")
+        lines.append(f"Motor_DE: {temp_data.get('Motor_DE', 'N/A')}°C | Motor_NDE: {temp_data.get('Motor_NDE', 'N/A')}°C")
+        if temp_data.get('Pump_DE') and temp_data.get('Pump_NDE'):
+            lines.append(f"Pump ΔT (DE-NDE): {abs(temp_data['Pump_DE'] - temp_data['Pump_NDE']):.1f}°C")
+        if temp_data.get('Motor_DE') and temp_data.get('Motor_NDE'):
+            lines.append(f"Motor ΔT (DE-NDE): {abs(temp_data['Motor_DE'] - temp_data['Motor_NDE']):.1f}°C")
+        lines.append("")
     
     lines.append("=== MECHANICAL VIBRATION ===")
     if mech_data.get("points"):
@@ -884,10 +1034,12 @@ def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data,
     lines.append(f"Overall Confidence: {integrated_result.get('confidence', 0)}%")
     lines.append(f"Overall Severity: {integrated_result.get('severity', 'N/A')}")
     lines.append(f"Correlation Notes: {'; '.join(integrated_result.get('correlation_notes', []))}")
+    if integrated_result.get("temperature_notes"):
+        lines.append(f"Temperature Notes: {'; '.join(integrated_result['temperature_notes'])}")
     lines.append("")
     
     lines.append("=== QCDSM RECOMMENDATIONS ===")
-    for category, recs in integrated_result.get("qcsm_recommendations", {}).items():
+    for category, recs in integrated_result.get("qcdsm_recommendations", {}).items():
         lines.append(f"{category.upper()}:")
         for rec in recs:
             lines.append(f"  • {rec}")
@@ -963,7 +1115,6 @@ def main():
         
         st.divider()
         
-        # ✅ FIXED: Removed st.page_link() - replaced with visual navigation hint
         st.subheader("🧭 Navigasi Cepat")
         st.markdown("""
         <div style="background-color:#f0f2f6; padding:10px; border-radius:5px; font-size:0.9em">
@@ -994,13 +1145,13 @@ def main():
             int_done = "✅" if "integrated_result" in st.session_state else "⏳"
             st.write(f"{int_done} Integrated")
     
-    # ✅ FIXED: Tab definition MUST be at main scope, before any 'with tab_xxx:' blocks
+    # Tab definition
     tab_mech, tab_hyd, tab_elec, tab_integrated = st.tabs([
         "🔧 Mechanical", "💧 Hydraulic", "⚡ Electrical", "🔗 Integrated Summary"
     ])
     
     # ========================================================================
-    # TAB 1: MECHANICAL VIBRATION ANALYSIS
+    # TAB 1: MECHANICAL VIBRATION ANALYSIS (UPDATED WITH TEMPERATURE)
     # ========================================================================
     with tab_mech:
         st.header("🔧 Mechanical Vibration Analysis")
@@ -1023,6 +1174,70 @@ def main():
             • Zone B Limit = 4.5 mm/s
             • Mode: {fft_mode}
             """)
+        
+        # ✅ NEW: Bearing Temperature Input Section
+        st.subheader("🌡️ Bearing Temperature (4 Points)")
+        st.caption("API 610/API 670 Thresholds: Normal <70°C | Elevated 70-85°C | Warning 85-95°C | Critical >95°C")
+        
+        temp_cols = st.columns(4)
+        temp_data = {}
+        
+        with temp_cols[0]:
+            pump_de_temp = st.number_input("Pump DE (°C)", min_value=0, max_value=150, 
+                                           value=65, step=1, key="temp_pump_de")
+            temp_data["Pump_DE"] = pump_de_temp
+            if pump_de_temp > BEARING_TEMP_LIMITS["warning_min"]:
+                st.error(f"🔴 {pump_de_temp}°C - Warning")
+            elif pump_de_temp > BEARING_TEMP_LIMITS["elevated_min"]:
+                st.warning(f"🟡 {pump_de_temp}°C - Elevated")
+            else:
+                st.success(f"🟢 {pump_de_temp}°C - Normal")
+        
+        with temp_cols[1]:
+            pump_nde_temp = st.number_input("Pump NDE (°C)", min_value=0, max_value=150, 
+                                            value=63, step=1, key="temp_pump_nde")
+            temp_data["Pump_NDE"] = pump_nde_temp
+            if pump_nde_temp > BEARING_TEMP_LIMITS["warning_min"]:
+                st.error(f"🔴 {pump_nde_temp}°C - Warning")
+            elif pump_nde_temp > BEARING_TEMP_LIMITS["elevated_min"]:
+                st.warning(f"🟡 {pump_nde_temp}°C - Elevated")
+            else:
+                st.success(f"🟢 {pump_nde_temp}°C - Normal")
+        
+        with temp_cols[2]:
+            motor_de_temp = st.number_input("Motor DE (°C)", min_value=0, max_value=150, 
+                                            value=68, step=1, key="temp_motor_de")
+            temp_data["Motor_DE"] = motor_de_temp
+            if motor_de_temp > BEARING_TEMP_LIMITS["warning_min"]:
+                st.error(f"🔴 {motor_de_temp}°C - Warning")
+            elif motor_de_temp > BEARING_TEMP_LIMITS["elevated_min"]:
+                st.warning(f"🟡 {motor_de_temp}°C - Elevated")
+            else:
+                st.success(f"🟢 {motor_de_temp}°C - Normal")
+        
+        with temp_cols[3]:
+            motor_nde_temp = st.number_input("Motor NDE (°C)", min_value=0, max_value=150, 
+                                             value=66, step=1, key="temp_motor_nde")
+            temp_data["Motor_NDE"] = motor_nde_temp
+            if motor_nde_temp > BEARING_TEMP_LIMITS["warning_min"]:
+                st.error(f"🔴 {motor_nde_temp}°C - Warning")
+            elif motor_nde_temp > BEARING_TEMP_LIMITS["elevated_min"]:
+                st.warning(f"🟡 {motor_nde_temp}°C - Elevated")
+            else:
+                st.success(f"🟢 {motor_nde_temp}°C - Normal")
+        
+        # Temperature differential display
+        if pump_de_temp and pump_nde_temp:
+            delta_pump = abs(pump_de_temp - pump_nde_temp)
+            if delta_pump > BEARING_TEMP_LIMITS["delta_threshold"]:
+                st.warning(f"⚠️ Pump ΔT (DE-NDE): {delta_pump}°C > 15°C threshold")
+        
+        if motor_de_temp and motor_nde_temp:
+            delta_motor = abs(motor_de_temp - motor_nde_temp)
+            if delta_motor > BEARING_TEMP_LIMITS["delta_threshold"]:
+                st.warning(f"⚠️ Motor ΔT (DE-NDE): {delta_motor}°C > 15°C threshold")
+        
+        st.divider()
         
         st.subheader("📊 Input Data 12 Titik Pengukuran")
         points = [f"{machine} {end} {direction}" 
@@ -1085,7 +1300,20 @@ def main():
                     peaks = fft_inputs.get(point, [(rpm_hz,0.1),(2*rpm_hz,0.05),(3*rpm_hz,0.02)])
                     bands = bands_inputs[point]
                     has_fft = point in fft_inputs
-                    result = diagnose_single_point_mechanical(peaks, bands, rpm_hz, point, input_data[point], has_fft)
+                    
+                    # ✅ NEW: Get bearing temperature for this point
+                    bearing_temp = None
+                    if "Pump" in point and "DE" in point:
+                        bearing_temp = temp_data.get("Pump_DE")
+                    elif "Pump" in point and "NDE" in point:
+                        bearing_temp = temp_data.get("Pump_NDE")
+                    elif "Motor" in point and "DE" in point:
+                        bearing_temp = temp_data.get("Motor_DE")
+                    elif "Motor" in point and "NDE" in point:
+                        bearing_temp = temp_data.get("Motor_NDE")
+                    
+                    result = diagnose_single_point_mechanical(peaks, bands, rpm_hz, point, 
+                                                               input_data[point], has_fft, bearing_temp)
                     result["point"] = point
                     result["location_hint"] = f"{'Pump' if 'Pump' in point else 'Motor'} {point.split()[1]}"
                     point_results.append(result)
@@ -1126,6 +1354,7 @@ def main():
                            for p in points},
                     "system_diagnosis": mech_system["diagnosis"]
                 }
+                st.session_state.temp_data = temp_data
                 
                 st.success(f"✅ Mechanical Analysis Complete: {mech_system['diagnosis']} ({mech_system['confidence']}%)")
         
@@ -1404,7 +1633,7 @@ def main():
                 st.info(get_electrical_recommendation(result["diagnosis"], result["severity"]))
     
     # ========================================================================
-    # TAB 4: INTEGRATED SUMMARY & CROSS-DOMAIN CORRELATION
+    # TAB 4: INTEGRATED SUMMARY & CROSS-DOMAIN CORRELATION (UPDATED WITH TEMPERATURE)
     # ========================================================================
     with tab_integrated:
         st.header("🔗 Integrated Diagnostic Summary")
@@ -1439,11 +1668,14 @@ def main():
                 st.metric("Electrical", status_elec)
         else:
             with st.spinner("Mengintegrasikan hasil tiga domain..."):
+                # ✅ NEW: Pass temperature data to integration function
+                temp_data = st.session_state.get("temp_data", None)
                 integrated_result = aggregate_cross_domain_diagnosis(
                     st.session_state.mech_result,
                     st.session_state.hyd_result,
                     st.session_state.elec_result,
-                    st.session_state.shared_context
+                    st.session_state.shared_context,
+                    temp_data
                 )
                 
                 st.session_state.integrated_result = integrated_result
@@ -1457,6 +1689,26 @@ def main():
                 st.metric("Overall Severity", f"{severity_icon} {integrated_result['severity']}")
             with col3:
                 st.metric("Correlation Boost", f"+{integrated_result['confidence'] - 70}%" if integrated_result['confidence'] > 70 else "Standard")
+            
+            # ✅ NEW: Display temperature summary if available
+            if temp_data:
+                with st.expander("🌡️ Temperature Analysis Summary", expanded=True):
+                    temp_cols = st.columns(4)
+                    with temp_cols[0]:
+                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Pump_DE", 0))
+                        st.metric("Pump DE", f"{temp_data.get('Pump_DE', 0)}°C", temp_status)
+                    with temp_cols[1]:
+                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Pump_NDE", 0))
+                        st.metric("Pump NDE", f"{temp_data.get('Pump_NDE', 0)}°C", temp_status)
+                    with temp_cols[2]:
+                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Motor_DE", 0))
+                        st.metric("Motor DE", f"{temp_data.get('Motor_DE', 0)}°C", temp_status)
+                    with temp_cols[3]:
+                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Motor_NDE", 0))
+                        st.metric("Motor NDE", f"{temp_data.get('Motor_NDE', 0)}°C", temp_status)
+                    
+                    if integrated_result.get("temperature_notes"):
+                        st.info("**Temperature Insights:**\n" + "\n".join(integrated_result["temperature_notes"]))
             
             with st.expander("🗺️ Fault Propagation Map", expanded=True):
                 st.write("**Cross-Domain Correlation Notes:**")
@@ -1475,7 +1727,7 @@ def main():
                 """)
             
             st.subheader("✅ QCDSM-Based Action Plan")
-            qcsm = integrated_result["qcsm_recommendations"]
+            qcsm = integrated_result["qcdsm_recommendations"]
             
             tabs_qcdsm = st.tabs(["Quality", "Cost", "Delivery", "Safety", "Spirit"])
             with tabs_qcdsm[0]:
@@ -1504,7 +1756,8 @@ def main():
                     st.session_state.get("mech_data", {}),
                     st.session_state.get("hyd_data", {}),
                     st.session_state.get("elec_data", {}),
-                    integrated_result
+                    integrated_result,
+                    temp_data
                 )
                 
                 st.download_button(
@@ -1520,8 +1773,8 @@ def main():
     # Footer
     st.divider()
     st.caption("""
-    **Standar Acuan**: ISO 10816-3/7 | ISO 13373-1 | API 610 | NEMA MG-1  
-    **Algoritma**: Hybrid rule-based dengan cross-domain correlation + confidence scoring  
+    **Standar Acuan**: ISO 10816-3/7 | ISO 13373-1 | API 610 | NEMA MG-1 | API 670  
+    **Algoritma**: Hybrid rule-based dengan cross-domain correlation + confidence scoring + temperature analysis  
     ⚠️ Decision Support System - Verifikasi oleh personnel kompeten untuk keputusan kritis  
     🏭 Pertamina Patra Niaga - Asset Integrity Management
     """)
@@ -1529,4 +1782,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
