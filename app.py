@@ -902,79 +902,9 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
     
     system_result["correlation_notes"] = correlated_faults if correlated_faults else ["No strong cross-domain correlation detected"]
     
-    system_result["qcdsm_recommendations"] = generate_qcdsm_recommendations(
-        mech_result, hyd_result, elec_result, system_result["severity"], shared_context, temp_data
-    )
+    system_result["action_notes"] = []
     
     return system_result
-
-
-def generate_qcdsm_recommendations(mech_result, hyd_result, elec_result, 
-                                    overall_severity, context, temp_data=None):
-    recommendations = {
-        "Quality": [],
-        "Cost": [],
-        "Delivery": [],
-        "Safety": [],
-        "Spirit": []
-    }
-    
-    fluid_type = context.get("fluid_type", "Diesel / Solar")
-    machine_id = context.get("machine_id", "Unknown")
-    
-    if mech_result.get("fault_type") in ["low_freq", "high_freq"]:
-        recommendations["Quality"].append(f"Verifikasi mechanical condition {machine_id} vs OEM specification")
-    if hyd_result.get("fault_type") in ["wear", "cavitation"]:
-        recommendations["Quality"].append(f"Jadwalkan inspection internal components untuk {fluid_type} service")
-    if elec_result.get("fault_type") in ["voltage", "current"]:
-        recommendations["Quality"].append("Verifikasi electrical supply quality di MCC sebelum operasi lanjutan")
-    if not recommendations["Quality"]:
-        recommendations["Quality"].append("Continue routine monitoring per maintenance plan")
-    
-    # ✅ NEW: Add temperature-based recommendations
-    if temp_data:
-        for location, temp in temp_data.items():
-            if temp and temp > BEARING_TEMP_LIMITS["warning_min"]:
-                recommendations["Quality"].append(f"⚠️ {location} temperature {temp}°C - Verify lubrication & alignment")
-    
-    if overall_severity == "High":
-        recommendations["Cost"].append("Estimasi cost of failure vs cost of repair untuk prioritas tindakan")
-    if hyd_result.get("details", {}).get("deviations", {}).get("eff_dev", 0) < -10:
-        eff_loss = abs(hyd_result["details"]["deviations"]["eff_dev"])
-        recommendations["Cost"].append(f"Efficiency drop {eff_loss:.1f}% → estimasi energy loss: Rp X/jam")
-    if not recommendations["Cost"]:
-        recommendations["Cost"].append("Preventive action lebih ekonomis vs corrective maintenance")
-    
-    if overall_severity == "High":
-        recommendations["Delivery"].append("Evaluasi impact pada production schedule sebelum shutdown")
-    elif overall_severity == "Medium":
-        recommendations["Delivery"].append("Operasi dapat dilanjutkan dengan monitoring intensif")
-    else:
-        recommendations["Delivery"].append("Tidak ada impact pada delivery schedule")
-    
-    if fluid_type in ["Pertalite (RON 90)", "Pertamax (RON 92)"] and hyd_result.get("fault_type") == "cavitation":
-        recommendations["Safety"].append("⚠️ Cavitation risk dengan fluid mudah menguap → monitor NPSH margin ketat")
-    if elec_result.get("severity") == "High":
-        recommendations["Safety"].append("Pastikan electrical work dilakukan oleh personnel bersertifikat")
-    if mech_result.get("severity") == "High":
-        recommendations["Safety"].append("Verifikasi mechanical integrity sebelum continue operation")
-    
-    # ✅ NEW: Add temperature-based safety recommendations
-    if temp_data:
-        for location, temp in temp_data.items():
-            if temp and temp > BEARING_TEMP_LIMITS["critical_min"]:
-                recommendations["Safety"].append(f"🔴 {location}: {temp}°C - Evaluate immediate shutdown")
-    
-    if not recommendations["Safety"]:
-        recommendations["Safety"].append("Tidak ada immediate safety risk teridentifikasi")
-    
-    recommendations["Spirit"].append("Dokumentasikan lesson learned untuk update inspection checklist")
-    if any(r.get("fault_type") == "unknown" for r in [mech_result, hyd_result, elec_result]):
-        recommendations["Spirit"].append("Share temuan ke tim reliability untuk root cause analysis mendalam")
-    recommendations["Spirit"].append("Update asset history di CMMS untuk predictive maintenance improvement")
-    
-    return recommendations
-
 
 # ============================================================================
 # REPORT GENERATION (UPDATED WITH TEMPERATURE)
@@ -1037,13 +967,6 @@ def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data,
     if integrated_result.get("temperature_notes"):
         lines.append(f"Temperature Notes: {'; '.join(integrated_result['temperature_notes'])}")
     lines.append("")
-    
-    lines.append("=== QCDSM RECOMMENDATIONS ===")
-    for category, recs in integrated_result.get("qcdsm_recommendations", {}).items():
-        lines.append(f"{category.upper()}:")
-        for rec in recs:
-            lines.append(f"  • {rec}")
-        lines.append("")
     
     return "\n".join(lines)
 
@@ -1726,25 +1649,9 @@ def main():
     💧 Hydraulic: {st.session_state.hyd_result['diagnosis']}
                 """)
             
-            st.subheader("✅ QCDSM-Based Action Plan")
-            qcsm = integrated_result["qcdsm_recommendations"]
-            
-            tabs_qcdsm = st.tabs(["Quality", "Cost", "Delivery", "Safety", "Spirit"])
-            with tabs_qcdsm[0]:
-                for rec in qcsm["Quality"]:
-                    st.write(f"• {rec}")
-            with tabs_qcdsm[1]:
-                for rec in qcsm["Cost"]:
-                    st.write(f"• {rec}")
-            with tabs_qcdsm[2]:
-                for rec in qcsm["Delivery"]:
-                    st.write(f"• {rec}")
-            with tabs_qcdsm[3]:
-                for rec in qcsm["Safety"]:
-                    st.write(f"• {rec}")
-            with tabs_qcdsm[4]:
-                for rec in qcsm["Spirit"]:
-                    st.write(f"• {rec}")
+            with st.expander("🔗 Correlation Insights", expanded=True):
+            for note in integrated_result["correlation_notes"]:
+            st.write(f"• {note}")
             
             st.divider()
             st.subheader("📥 Export Report")
