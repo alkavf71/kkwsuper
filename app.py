@@ -180,6 +180,38 @@ def get_electrical_recommendation(diagnosis: str, severity: str = "Medium") -> s
             f"• Impact: negative sequence current → rotor heating ↑ → bearing stress ↑\n"
             f"• Severity: {severity} → {'Balance supply sebelum mechanical damage' if severity != 'Low' else 'Monitor monthly'}"
         ),
+        "ELECTRICAL_ARCING": (
+            f"🔴 **Electrical Arcing Detected**\n"
+            f"• ⚠️ IMMEDIATE SAFETY RISK - Potential fire/explosion hazard\n"
+            f"• Periksa: loose connection, corroded terminal, damaged cable insulation\n"
+            f"• Gunakan thermal imaging camera untuk identifikasi hot spot\n"
+            f"• Pastikan area bebas dari BBM vapor sebelum inspection\n"
+            f"• Severity: HIGH → Immediate shutdown & electrical inspection required"
+        ),
+        "INSULATION_OVERHEAT": (
+            f"🔴 **Insulation Overheat / Breakdown**\n"
+            f"• ⚠️ RISK OF MOTOR FAILURE - Insulation degradation detected\n"
+            f"• Cek: megger test insulation resistance, winding temperature\n"
+            f"• Investigasi: overload history, ventilation blockage, voltage stress\n"
+            f"• Pertimbangkan: motor rewinding atau replacement\n"
+            f"• Severity: HIGH → Schedule inspection within 24-48 hours"
+        ),
+        "CONNECTION_OVERHEAT": (
+            f"🔴 **Electrical Connection Overheat**\n"
+            f"• Periksa: terminal tightness, contact resistance, cable sizing\n"
+            f"• Gunakan torque wrench sesuai spec manufacturer\n"
+            f"• Inspect: contactor, breaker, fuse connections di MCC\n"
+            f"• Clean: corroded or oxidized contact surfaces\n"
+            f"• Severity: HIGH → Tighten/replace connections before continue operation"
+        ),
+        "MOTOR_OVERHEAT": (
+            f"🟠 **Motor Overheat Condition**\n"
+            f"• Cek: motor ventilation, cooling fan, ambient temperature\n"
+            f"• Verify: load vs rated capacity, service factor\n"
+            f"• Inspect: bearing condition (friction can cause heating)\n"
+            f"• Monitor: temperature trend hourly until stabilized\n"
+            f"• Severity: MEDIUM-HIGH → Reduce load if possible, investigate root cause"
+        ),
         "CURRENT_UNBALANCE": (
             f"⚡ **Current Unbalance Detected**\n"
             f"• Investigasi: winding fault, rotor bar issue, atau supply problem\n"
@@ -1497,3 +1529,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+  
