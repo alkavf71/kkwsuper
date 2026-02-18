@@ -794,7 +794,8 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
         correlated_faults.append("High electrical input + low hydraulic output → internal mechanical/hydraulic loss")
         system_result["diagnosis"] = "Internal Loss Investigation Required"
     
-    if temp_
+    # ✅ FIXED: Temperature-based correlation patterns
+    if temp_data:
         temp_adjustment, temp_notes = calculate_temperature_confidence_adjustment(
             temp_data, 
             diagnosis_consistent=(mech_fault is not None and mech_fault != "normal")
@@ -818,7 +819,8 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
     else:
         system_result["severity"] = "Low"
     
-    if temp_
+    # ✅ FIXED: Upgrade severity if critical temperature
+    if temp_data:
         for temp in temp_data.values():
             if temp and temp > BEARING_TEMP_LIMITS["critical_min"]:
                 system_result["severity"] = "High"
@@ -847,7 +849,8 @@ def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data,
     lines.append(f"Standards: ISO 10816-3/7 (Mech) | API 610 (Hyd) | NEMA MG-1 (Elec)")
     lines.append("")
     
-    if temp_
+    # ✅ FIXED: Add temperature section
+    if temp_data:
         lines.append("=== BEARING TEMPERATURE ===")
         lines.append(f"Pump_DE: {temp_data.get('Pump_DE', 'N/A')}°C | Pump_NDE: {temp_data.get('Pump_NDE', 'N/A')}°C")
         lines.append(f"Motor_DE: {temp_data.get('Motor_DE', 'N/A')}°C | Motor_NDE: {temp_data.get('Motor_NDE', 'N/A')}°C")
