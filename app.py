@@ -40,14 +40,14 @@ FLUID_PROPERTIES = {
         "sg": 0.73,
         "vapor_pressure_kpa_38C": 52,
         "viscosity_cst_40C": 0.6,
-        "flash_point_C": -40,
+        "flash_point_C": -43,
         "risk_level": "High"
     },
     "Pertamax (RON 92)": {
         "sg": 0.74,
         "vapor_pressure_kpa_38C": 42,
         "viscosity_cst_40C": 0.6,
-        "flash_point_C": -40,
+        "flash_point_C": -43,
         "risk_level": "High"
     },
     "Diesel / Solar": {
