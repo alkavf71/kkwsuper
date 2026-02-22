@@ -753,7 +753,7 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
 def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
                                      shared_context, temp_data=None):
     system_result = {
-        "diagnosis": "Normal - All Domains",
+        "diagnosis": "Tidak Ada Korelasi Antar Domain Terdeteksi",  # ✅ UBAH DEFAULT
         "confidence": 0,
         "severity": "Low",
         "location": "N/A",
@@ -772,6 +772,10 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
     hyd_fault = hyd_result.get("fault_type")
     elec_fault = elec_result.get("fault_type")
     
+    mech_diag = mech_result.get("diagnosis", "Normal")
+    hyd_diag = hyd_result.get("diagnosis", "NORMAL_OPERATION")
+    elec_diag = elec_result.get("diagnosis", "NORMAL_ELECTRICAL")
+    
     mech_sev = mech_result.get("severity", "Low")
     hyd_sev = hyd_result.get("severity", "Low")
     elec_sev = elec_result.get("severity", "Low")
@@ -779,27 +783,28 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
     correlation_bonus = 0
     correlated_faults = []
     
-    # Correlation pattern 1: Voltage → Mechanical → Hydraulic
+    # ✅ HANYA UBAH DIAGNOSIS JIKA CORRELATION PATTERN MATCH
+    # Pattern 1: Voltage → Mechanical → Hydraulic
     if (elec_fault == "voltage" and 
         mech_result.get("diagnosis") in ["MISALIGNMENT", "LOOSENESS"] and
         hyd_result.get("details", {}).get("deviations", {}).get("head_dev", 0) < -5):
         correlation_bonus += 15
         correlated_faults.append("Voltage unbalance → torque pulsation → hydraulic instability")
-        system_result["diagnosis"] = "Electrical-Mechanical-Hydraulic Coupled Fault"
+        system_result["diagnosis"] = "Electrical-Mechanical-Hydraulic Coupled Fault"  # ✅ UBAH
     
-    # Correlation pattern 2: Cavitation → Wear → Current
+    # Pattern 2: Cavitation → Wear → Current
     if (hyd_fault == "cavitation" and mech_fault == "wear" and
         elec_result.get("details", {}).get("current_unbalance", 0) > 5):
         correlation_bonus += 20
         correlated_faults.append("Cavitation → impeller erosion → unbalance → current fluctuation")
-        system_result["diagnosis"] = "Cascading Failure: Cavitation Origin"
+        system_result["diagnosis"] = "Cascading Failure: Cavitation Origin"  # ✅ UBAH
     
-    # Correlation pattern 3: High Current + Low Efficiency
+    # Pattern 3: High Current + Low Efficiency
     if (elec_result.get("diagnosis") == "HIGH_CURRENT_NORMAL_OUTPUT" and
         hyd_fault == "efficiency"):
         correlation_bonus += 10
         correlated_faults.append("High electrical input + low hydraulic output → internal mechanical/hydraulic loss")
-        system_result["diagnosis"] = "Internal Loss Investigation Required"
+        system_result["diagnosis"] = "Internal Loss Investigation Required"  # ✅ UBAH
     
     # Temperature-based correlation
     if temp_data:
@@ -818,7 +823,7 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
             if temp_data["Motor_DE"] > temp_data["Pump_DE"] + 10:
                 correlated_faults.append("Motor DE > Pump DE → Possible electrical origin")
     
-    # Severity determination
+    # ✅ SEVERITY: Ambil yang tertinggi dari 3 domain
     severities = [mech_sev, hyd_sev, elec_sev]
     if "High" in severities:
         system_result["severity"] = "High"
@@ -835,13 +840,14 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
                 correlated_faults.append("⚠️ Critical bearing temperature detected")
                 break
     
-    # Confidence calculation
+    # ✅ CONFIDENCE: Base dari rata-rata domain + correlation bonus
     confidences = [r.get("confidence", 0) for r in [mech_result, hyd_result, elec_result] 
                    if r.get("confidence", 0) > 0]
     base_confidence = np.mean(confidences) if confidences else 0
     system_result["confidence"] = min(95, int(base_confidence + correlation_bonus))
     
-    system_result["correlation_notes"] = correlated_faults if correlated_faults else ["No strong cross-domain correlation detected"]
+    # ✅ CORRELATION NOTES: Jelas bedakan ada korelasi atau tidak
+    system_result["correlation_notes"] = correlated_faults if correlated_faults else ["Tidak ada korelasi kuat antar domain terdeteksi"]
     
     return system_result
 
