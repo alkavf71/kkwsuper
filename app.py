@@ -1084,19 +1084,7 @@ def main():
     with tab_hyd:
         st.header("💧 Hydraulic Troubleshooting")
         st.caption("Single-Point Steady-State Measurement | BBM Fluid Types")
-        with st.expander("✅ Verifikasi Steady-State (Wajib)", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                steady_15min = st.checkbox("Sistem stabil ≥15 menit setelah start-up/load change", key="steady_15min")
-                steady_pressure = st.checkbox("Fluktuasi pressure < ±2% selama 2 menit", key="steady_pressure")
-                steady_flow = st.checkbox("Fluktuasi flow < ±3% selama 2 menit", key="steady_flow")
-            with col2:
-                steady_valve = st.checkbox("Tidak ada perubahan posisi valve selama pengukuran", key="steady_valve")
-                steady_load = st.checkbox("Kondisi beban proses konfirm stabil", key="steady_load")
-                steady_time = st.text_input("Waktu Verifikasi Steady (HH:MM)", value="10:28", key="steady_time")
-            steady_verified = all([steady_15min, steady_pressure, steady_flow, steady_valve, steady_load])
-            if not steady_verified:
-                st.warning("⚠️ Lengkapi verifikasi steady-state untuk mengaktifkan analisis")
+        steady_verified = True
         st.subheader("📊 Data Primer Hidrolik")
         col1, col2, col3 = st.columns(3)
         with col1:
