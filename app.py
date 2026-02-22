@@ -1632,15 +1632,15 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
     
-    # ✅ Temperature Notes jika ada
-    if integrated_result.get("temperature_notes"):
-        st.markdown("**🌡️ Temperature Insights:**")
-        for temp_note in integrated_result["temperature_notes"]:
-            st.markdown(f"""
-            <div style="background-color:#d5f5e3; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #27ae60;">
-                {temp_note}
-            </div>
-            """, unsafe_allow_html=True)
+                # ✅ Temperature Notes jika ada
+                if integrated_result.get("temperature_notes"):
+                    st.markdown("**🌡️ Temperature Insights:**")
+                    for temp_note in integrated_result["temperature_notes"]:
+                        st.markdown(f"""
+                        <div style="background-color:#d5f5e3; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #27ae60;">
+                            {temp_note}
+                        </div>
+                        """, unsafe_allow_html=True)
             
             st.divider()
             st.subheader("📥 Export Report")
