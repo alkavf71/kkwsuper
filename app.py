@@ -1192,18 +1192,18 @@ def main():
     with tab_elec:
         st.header("⚡ Electrical Condition Analysis")
         st.caption("3-Phase Voltage/Current | Unbalance Detection | Motor Load Estimation")
-        with st.expander("⚙️ Motor Specifications (Nameplate)", expanded=True):
+        with st.expander("⚙️ Motor Nameplate (Minimal)", expanded=True):
             col1, col2 = st.columns(2)
             with col1:
-                rated_voltage = st.number_input("Rated Voltage (V)", min_value=200, max_value=690, value=400, step=10, key="rated_v")
-                rated_current = st.number_input("Rated Current (A)", min_value=10, max_value=500, value=85, step=5, key="rated_i")
-                rated_power = st.number_input("Rated Power (kW)", min_value=1, max_value=500, value=45, step=1, key="rated_kw")
+                rated_voltage = st.number_input("Rated Voltage (V)", min_value=200, max_value=690, value=400, step=10, key="rated_v",
+                                                help="Dari nameplate motor - acuan toleransi ±10%")
             with col2:
-                motor_efficiency = st.number_input("Motor Efficiency (%)", min_value=70, max_value=98, value=92, step=1, key="motor_eff")
-                connection_type = st.radio("Connection", ["Star", "Delta"], index=0, key="connection")
-                pf_default = st.number_input("Expected Power Factor", min_value=0.5, max_value=1.0, value=0.85, step=0.05, key="pf_default")
+                fla = st.number_input("Full Load Amps - FLA (A)", min_value=10, max_value=500, value=85, step=5, key="rated_i",
+                                      help="Dari nameplate motor - acuan load capacity")
+            st.caption("💡 Hanya 2 parameter nameplate yang diperlukan untuk voltage/current analysis")
+        
         st.subheader("📊 Pengukuran 3-Phase")
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)  # ✅ CHANGE: 3 columns → 2 columns
         with col1:
             st.caption("Voltage (Line-to-Line)")
             v_l1l2 = st.number_input("L1-L2 (V)", min_value=0.0, value=400.0, step=1.0, key="v_l1l2")
@@ -1214,11 +1214,7 @@ def main():
             i_l1 = st.number_input("L1 (A)", min_value=0.0, value=82.0, step=0.5, key="i_l1")
             i_l2 = st.number_input("L2 (A)", min_value=0.0, value=84.0, step=0.5, key="i_l2")
             i_l3 = st.number_input("L3 (A)", min_value=0.0, value=83.0, step=0.5, key="i_l3")
-        with col3:
-            st.caption("Power & Frequency")
-            power_factor = st.number_input("Power Factor", min_value=0.0, max_value=1.0, value=pf_default, step=0.01, key="pf_input")
-            frequency = st.number_input("Frequency (Hz)", min_value=45.0, max_value=65.0, value=50.0, step=0.1, key="frequency")
-            measured_power = st.number_input("Active Power (kW) - Optional", min_value=0.0, value=0.0, step=0.5, key="measured_power")
+
         with st.expander("📈 Perhitungan Real-Time", expanded=True):
             elec_calc = calculate_electrical_parameters(
                 v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3, power_factor, rated_voltage, rated_current
