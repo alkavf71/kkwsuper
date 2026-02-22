@@ -747,93 +747,135 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
 # CROSS-DOMAIN INTEGRATION LOGIC (QCDSM DIHAPUS)
 # ============================================================================
 
-def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result, 
-                                      shared_context, temp_data=None):
-    system_result = {
-        "diagnosis": "Normal - All Domains",
-        "confidence": 0,
-        "severity": "Low",
-        "location": "N/A",
-        "domain_breakdown": {},
-        "correlation_notes": [],
-        "temperature_notes": []
-    }
-    
-    system_result["domain_breakdown"] = {
-        "mechanical": mech_result,
-        "hydraulic": hyd_result,
-        "electrical": elec_result
-    }
-    
-    mech_fault = mech_result.get("fault_type")
-    hyd_fault = hyd_result.get("fault_type")
-    elec_fault = elec_result.get("fault_type")
-    
-    mech_sev = mech_result.get("severity", "Low")
-    hyd_sev = hyd_result.get("severity", "Low")
-    elec_sev = elec_result.get("severity", "Low")
-    
-    correlation_bonus = 0
-    correlated_faults = []
-    
-    if (elec_fault == "voltage" and mech_result.get("diagnosis") in ["MISALIGNMENT", "LOOSENESS"] 
-        and hyd_result.get("details", {}).get("deviations", {}).get("head_dev", 0) < -5):
-        correlation_bonus += 15
-        correlated_faults.append("Voltage unbalance → torque pulsation → hydraulic instability")
-        system_result["diagnosis"] = "Electrical-Mechanical-Hydraulic Coupled Fault"
-    
-    if (hyd_fault == "cavitation" and mech_fault == "wear" 
-        and elec_result.get("details", {}).get("current_unbalance", 0) > 5):
-        correlation_bonus += 20
-        correlated_faults.append("Cavitation → impeller erosion → unbalance → current fluctuation")
-        system_result["diagnosis"] = "Cascading Failure: Cavitation Origin"
-    
-    if (elec_result.get("diagnosis") == "HIGH_CURRENT_NORMAL_OUTPUT" 
-        and hyd_fault == "efficiency"):
-        correlation_bonus += 10
-        correlated_faults.append("High electrical input + low hydraulic output → internal mechanical/hydraulic loss")
-        system_result["diagnosis"] = "Internal Loss Investigation Required"
-    
-    # ✅ FIXED: Temperature-based correlation patterns
-    if temp_data:
-        temp_adjustment, temp_notes = calculate_temperature_confidence_adjustment(
-            temp_data, 
-            diagnosis_consistent=(mech_fault is not None and mech_fault != "normal")
-        )
-        correlation_bonus += temp_adjustment
-        system_result["temperature_notes"] = temp_notes
-        
-        if temp_data.get("Pump_DE") and temp_data.get("Pump_NDE"):
-            if abs(temp_data["Pump_DE"] - temp_data["Pump_NDE"]) > BEARING_TEMP_LIMITS["delta_threshold"]:
-                correlated_faults.append(f"Pump DE-NDE ΔT >15°C → Localized fault on DE bearing")
-        
-        if temp_data.get("Motor_DE") and temp_data.get("Pump_DE"):
-            if temp_data["Motor_DE"] > temp_data["Pump_DE"] + 10:
-                correlated_faults.append("Motor DE > Pump DE → Possible electrical origin")
-    
-    severities = [mech_sev, hyd_sev, elec_sev]
-    if "High" in severities:
-        system_result["severity"] = "High"
-    elif "Medium" in severities:
-        system_result["severity"] = "Medium"
-    else:
-        system_result["severity"] = "Low"
-    
-    # ✅ FIXED: Upgrade severity if critical temperature
-    if temp_data:
-        for temp in temp_data.values():
-            if temp and temp > BEARING_TEMP_LIMITS["critical_min"]:
-                system_result["severity"] = "High"
-                correlated_faults.append("⚠️ Critical bearing temperature detected")
-                break
-    
-    confidences = [r.get("confidence", 0) for r in [mech_result, hyd_result, elec_result] if r.get("confidence", 0) > 0]
-    base_confidence = np.mean(confidences) if confidences else 0
-    system_result["confidence"] = min(95, int(base_confidence + correlation_bonus))
-    
-    system_result["correlation_notes"] = correlated_faults if correlated_faults else ["No strong cross-domain correlation detected"]
-    
-    return system_result
+def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
+shared_context, temp_data=None):
+system_result = {
+"diagnosis": "Normal - All Domains",  # Default
+"confidence": 0,
+"severity": "Low",
+"location": "N/A",
+"domain_breakdown": {},
+"correlation_notes": [],
+"temperature_notes": []
+}
+
+system_result["domain_breakdown"] = {
+"mechanical": mech_result,
+"hydraulic": hyd_result,
+"electrical": elec_result
+}
+
+mech_fault = mech_result.get("fault_type")
+hyd_fault = hyd_result.get("fault_type")
+elec_fault = elec_result.get("fault_type")
+
+mech_diag = mech_result.get("diagnosis", "Normal")
+hyd_diag = hyd_result.get("diagnosis", "NORMAL_OPERATION")
+elec_diag = elec_result.get("diagnosis", "NORMAL_ELECTRICAL")
+
+mech_sev = mech_result.get("severity", "Low")
+hyd_sev = hyd_result.get("severity", "Low")
+elec_sev = elec_result.get("severity", "Low")
+
+# ✅ FIX 1: Cek apakah ADA fault di domain manapun
+has_mech_fault = mech_fault not in [None, "normal"] and mech_diag != "Normal"
+has_hyd_fault = hyd_fault not in [None, "normal"] and hyd_diag != "NORMAL_OPERATION"
+has_elec_fault = elec_fault not in [None, "normal"] and elec_diag != "NORMAL_ELECTRICAL"
+
+# ✅ FIX 2: Jika semua domain normal, baru return "Normal - All Domains"
+if not has_mech_fault and not has_hyd_fault and not has_elec_fault:
+system_result["diagnosis"] = "Normal - All Domains"
+system_result["confidence"] = 95
+system_result["severity"] = "Low"
+system_result["correlation_notes"] = ["All domains within acceptable limits"]
+return system_result
+
+# ✅ FIX 3: Jika ada fault, tentukan diagnosis berdasarkan severity tertinggi
+correlation_bonus = 0
+correlated_faults = []
+
+# Existing correlation patterns (tetap dipertahankan)
+if (elec_fault == "voltage" and mech_result.get("diagnosis") in ["MISALIGNMENT", "LOOSENESS"]
+and hyd_result.get("details", {}).get("deviations", {}).get("head_dev", 0) < -5):
+correlation_bonus += 15
+correlated_faults.append("Voltage unbalance → torque pulsation → hydraulic instability")
+system_result["diagnosis"] = "Electrical-Mechanical-Hydraulic Coupled Fault"
+
+if (hyd_fault == "cavitation" and mech_fault == "wear"
+and elec_result.get("details", {}).get("current_unbalance", 0) > 5):
+correlation_bonus += 20
+correlated_faults.append("Cavitation → impeller erosion → unbalance → current fluctuation")
+system_result["diagnosis"] = "Cascading Failure: Cavitation Origin"
+
+if (elec_result.get("diagnosis") == "HIGH_CURRENT_NORMAL_OUTPUT"
+and hyd_fault == "efficiency"):
+correlation_bonus += 10
+correlated_faults.append("High electrical input + low hydraulic output → internal mechanical/hydraulic loss")
+system_result["diagnosis"] = "Internal Loss Investigation Required"
+
+# ✅ FIX 4: Jika tidak ada correlation pattern, gunakan fault dengan severity tertinggi
+if system_result["diagnosis"] == "Normal - All Domains":
+# Prioritas: High severity faults
+high_sev_faults = []
+if has_mech_fault and mech_sev == "High":
+high_sev_faults.append(("Mechanical", mech_diag))
+if has_hyd_fault and hyd_sev == "High":
+high_sev_faults.append(("Hydraulic", hyd_diag))
+if has_elec_fault and elec_sev == "High":
+high_sev_faults.append(("Electrical", elec_diag))
+
+if high_sev_faults:
+# Ambil fault pertama dengan severity High
+system_result["diagnosis"] = f"Multi-Domain Fault: {high_sev_faults[0][1]}"
+else:
+# Jika tidak ada High, ambil yang Medium
+medium_sev_faults = []
+if has_mech_fault and mech_sev == "Medium":
+medium_sev_faults.append(("Mechanical", mech_diag))
+if has_hyd_fault and hyd_sev == "Medium":
+medium_sev_faults.append(("Hydraulic", hyd_diag))
+if has_elec_fault and elec_sev == "Medium":
+medium_sev_faults.append(("Electrical", elec_diag))
+
+if medium_sev_faults:
+system_result["diagnosis"] = f"Multi-Domain Fault: {medium_sev_faults[0][1]}"
+else:
+# Fallback: tampilkan semua fault
+fault_list = []
+if has_mech_fault:
+fault_list.append(mech_diag)
+if has_hyd_fault:
+fault_list.append(hyd_diag)
+if has_elec_fault:
+fault_list.append(elec_diag)
+system_result["diagnosis"] = f"Multi-Domain Fault: {' + '.join(fault_list)}"
+
+# Temperature correlation (tetap dipertahankan)
+if temp_data:
+temp_adjustment, temp_notes = calculate_temperature_confidence_adjustment(
+temp_data,
+diagnosis_consistent=(has_mech_fault or has_hyd_fault or has_elec_fault)
+)
+correlation_bonus += temp_adjustment
+system_result["temperature_notes"] = temp_notes
+
+# Severity determination (tetap dipertahankan)
+severities = [mech_sev, hyd_sev, elec_sev]
+if "High" in severities:
+system_result["severity"] = "High"
+elif "Medium" in severities:
+system_result["severity"] = "Medium"
+else:
+system_result["severity"] = "Low"
+
+# Confidence calculation (tetap dipertahankan)
+confidences = [r.get("confidence", 0) for r in [mech_result, hyd_result, elec_result] if r.get("confidence", 0) > 0]
+base_confidence = np.mean(confidences) if confidences else 0
+system_result["confidence"] = min(95, int(base_confidence + correlation_bonus))
+
+system_result["correlation_notes"] = correlated_faults if correlated_faults else ["No strong cross-domain correlation detected"]
+
+return system_result
 
 
 # ============================================================================
