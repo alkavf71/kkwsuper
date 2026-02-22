@@ -171,6 +171,12 @@ def get_electrical_recommendation(diagnosis: str, severity: str = "Medium") -> s
             f"• Verify: motor rated voltage vs actual operating voltage\n"
             f"• Severity: {severity} → {'Coordinate dengan electrical team segera' if severity == 'High' else 'Monitor voltage trend'}"
         ),
+        "OVER_VOLTAGE": (
+            f"⚡ **Over Voltage Condition**\n"
+            f"• Cek supply voltage di MCC: possible transformer tap issue\n"
+            f"• Verify: motor rated voltage vs actual operating voltage\n"
+            f"• Severity: {severity} → {'Coordinate dengan electrical team segera' if severity == 'High' else 'Monitor voltage trend'}"
+        ),
         "VOLTAGE_UNBALANCE": (
             f"⚡ **Voltage Unbalance Detected**\n"
             f"• Cek 3-phase supply balance di source: possible single-phase loading\n"
@@ -208,11 +214,17 @@ def get_electrical_recommendation(diagnosis: str, severity: str = "Medium") -> s
             f"• Cek insulation resistance & winding resistance balance\n"
             f"• Severity: {severity} → {'Schedule electrical inspection' if severity != 'Low' else 'Continue monitoring'}"
         ),
-        "HIGH_CURRENT_NORMAL_OUTPUT": (
-            f"⚡ **High Current + Normal Hydraulic Output**\n"
-            f"• Indikasi: mechanical loss ↑ (bearing, misalignment) atau electrical inefficiency\n"
-            f"• Cross-check: vibration level, bearing temperature, coupling condition\n"
-            f"• Severity: {severity} → {'Investigate mechanical domain first' if severity != 'Low' else 'Monitor trend'}"
+        "OVER_LOAD": (
+            f"⚡ **Over Load Condition**\n"
+            f"• Motor operating above FLA rating\n"
+            f"• Verify: process load, mechanical binding, or electrical issue\n"
+            f"• Severity: {severity} → {'Reduce load immediately' if severity == 'High' else 'Monitor trend closely'}"
+        ),
+        "UNDER_LOAD": (
+            f"⚡ **Under Load Condition**\n"
+            f"• Motor operating below 50% FLA\n"
+            f"• Verify: process demand, pump sizing, or system resistance\n"
+            f"• Severity: Low → Review operating point vs BEP"
         ),
         "NORMAL_ELECTRICAL": (
             f"✅ **Normal Electrical Condition**\n"
@@ -315,10 +327,14 @@ def classify_hydraulic_performance(head_aktual, head_design, efficiency_aktual,
         return "MIXED_DEVIATION", {"head_dev": dev_head, "eff_dev": dev_eff, "flow_dev": dev_flow}
 
 # ============================================================================
-# FUNGSI PERHITUNGAN - ELECTRICAL DOMAIN
+# FUNGSI PERHITUNGAN - ELECTRICAL DOMAIN (SIMPLIFIED)
 # ============================================================================
 def calculate_electrical_parameters(v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3,
-                                    rated_voltage, fla):  # ✅ CHANGE: rated_current → fla (lebih jelas)
+                                    rated_voltage, fla):
+    """
+    Simplified electrical calculation - Voltage, Current, Load only
+    No Power Factor, No Active Power calculation
+    """
     v_avg = (v_l1l2 + v_l2l3 + v_l3l1) / 3
     i_avg = (i_l1 + i_l2 + i_l3) / 3
     v_deviations = [abs(v - v_avg) for v in [v_l1l2, v_l2l3, v_l3l1]]
@@ -341,9 +357,14 @@ def calculate_electrical_parameters(v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3,
 def classify_electrical_condition(voltage_unbalance, current_unbalance,
                                   load_estimate, voltage_within_tolerance,
                                   rated_voltage, v_avg):
+    """
+    Simplified electrical classification - Voltage, Current, Load only
+    """
     if not voltage_within_tolerance and v_avg < rated_voltage:
         severity = "High" if load_estimate > 80 else "Medium"
         return "UNDER_VOLTAGE", 70, severity
+    elif not voltage_within_tolerance and v_avg > rated_voltage * 1.1:
+        return "OVER_VOLTAGE", 70, "Medium"
     if voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_critical"]:
         return "VOLTAGE_UNBALANCE", 75, "High"
     elif voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_warning"]:
@@ -353,7 +374,9 @@ def classify_electrical_condition(voltage_unbalance, current_unbalance,
     elif current_unbalance > ELECTRICAL_LIMITS["current_unbalance_warning"]:
         return "CURRENT_UNBALANCE", 60, "Medium"
     if load_estimate > ELECTRICAL_LIMITS["current_load_critical"]:
-        return "HIGH_CURRENT_NORMAL_OUTPUT", 55, "Medium"
+        return "OVER_LOAD", 55, "Medium"
+    elif load_estimate < 50:
+        return "UNDER_LOAD", 50, "Low"
     return "NORMAL_ELECTRICAL", 95, "Low"
 
 # ============================================================================
@@ -516,9 +539,13 @@ def diagnose_hydraulic_single_point(hydraulic_calc, design_params, fluid_props,
     return result
 
 # ============================================================================
-# FUNGSI DIAGNOSA - ELECTRICAL DOMAIN
+# FUNGSI DIAGNOSA - ELECTRICAL DOMAIN (SIMPLIFIED)
 # ============================================================================
-def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: observations parameter
+def diagnose_electrical_condition(electrical_calc, motor_specs):
+    """
+    Simplified electrical diagnosis - Voltage, Current, Load only
+    No temperature/odor/noise observations required
+    """
     result = {
         "diagnosis": "NORMAL_ELECTRICAL",
         "confidence": 0,
@@ -533,9 +560,8 @@ def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: 
     voltage_within_tolerance = electrical_calc.get("voltage_within_tolerance", True)
     v_avg = electrical_calc.get("v_avg", 0)
     rated_voltage = motor_specs.get("rated_voltage", 400)
-    # ✅ REMOVE: motor_temp, panel_condition, noise_elec, odor (tidak dalam scope)
-    # ✅ FOCUS: Voltage, Current, Load saja
-        # ✅ 1. Under/Over Voltage
+    
+    # 1. Under/Over Voltage
     if not voltage_within_tolerance:
         if v_avg < rated_voltage * 0.9:
             result["diagnosis"] = "UNDER_VOLTAGE"
@@ -554,7 +580,7 @@ def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: 
         }
         return result
     
-    # ✅ 2. Voltage Unbalance
+    # 2. Voltage Unbalance
     if voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_critical"]:
         result["diagnosis"] = "VOLTAGE_UNBALANCE"
         result["confidence"] = 75
@@ -566,7 +592,7 @@ def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: 
         result["severity"] = "Medium"
         result["fault_type"] = "voltage"
     else:
-        # ✅ 3. Current Unbalance
+        # 3. Current Unbalance
         if current_unbalance > ELECTRICAL_LIMITS["current_unbalance_critical"]:
             result["diagnosis"] = "CURRENT_UNBALANCE"
             result["confidence"] = 70
@@ -578,34 +604,24 @@ def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: 
             result["severity"] = "Medium"
             result["fault_type"] = "current"
         else:
-            # ✅ 4. Load Capacity
+            # 4. Load Capacity
             if load_estimate > ELECTRICAL_LIMITS["current_load_critical"]:
-                result["diagnosis"] = "OVER_LOAD"  # ✅ CHANGE: HIGH_CURRENT_NORMAL_OUTPUT → OVER_LOAD
+                result["diagnosis"] = "OVER_LOAD"
                 result["confidence"] = 55
                 result["severity"] = "Medium"
                 result["fault_type"] = "load"
-            elif load_estimate < 50:  # ✅ ADD: Under current detection
+            elif load_estimate < 50:
                 result["diagnosis"] = "UNDER_LOAD"
                 result["confidence"] = 50
                 result["severity"] = "Low"
                 result["fault_type"] = "load"
             else:
-                # ✅ 5. Normal
+                # 5. Normal
                 result["diagnosis"] = "NORMAL_ELECTRICAL"
                 result["confidence"] = 95
                 result["severity"] = "Low"
                 result["fault_type"] = "normal"
     
-    result["details"] = {
-        "voltage_unbalance": voltage_unbalance,
-        "current_unbalance": current_unbalance,
-        "load_estimate": load_estimate
-    }
-    return result
-    result["diagnosis"] = "NORMAL_ELECTRICAL"
-    result["confidence"] = 95
-    result["severity"] = "Low"
-    result["fault_type"] = "normal"
     result["details"] = {
         "voltage_unbalance": voltage_unbalance,
         "current_unbalance": current_unbalance,
@@ -619,7 +635,7 @@ def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: 
 def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
                                      shared_context, temp_data=None):
     system_result = {
-        "diagnosis": "Tidak Ada Korelasi Antar Domain Terdeteksi",  # ✅ UBAH DEFAULT
+        "diagnosis": "Tidak Ada Korelasi Antar Domain Terdeteksi",
         "confidence": 0,
         "severity": "Low",
         "location": "N/A",
@@ -643,26 +659,25 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
     elec_sev = elec_result.get("severity", "Low")
     correlation_bonus = 0
     correlated_faults = []
-    # ✅ HANYA UBAH DIAGNOSIS JIKA CORRELATION PATTERN MATCH
     # Pattern 1: Voltage → Mechanical → Hydraulic
     if (elec_fault == "voltage" and
         mech_result.get("diagnosis") in ["MISALIGNMENT", "LOOSENESS"] and
         hyd_result.get("details", {}).get("deviations", {}).get("head_dev", 0) < -5):
         correlation_bonus += 15
         correlated_faults.append("Voltage unbalance → torque pulsation → hydraulic instability")
-        system_result["diagnosis"] = "Electrical-Mechanical-Hydraulic Coupled Fault"  # ✅ UBAH
+        system_result["diagnosis"] = "Electrical-Mechanical-Hydraulic Coupled Fault"
     # Pattern 2: Cavitation → Wear → Current
     if (hyd_fault == "cavitation" and mech_fault == "wear" and
         elec_result.get("details", {}).get("current_unbalance", 0) > 5):
         correlation_bonus += 20
         correlated_faults.append("Cavitation → impeller erosion → unbalance → current fluctuation")
-        system_result["diagnosis"] = "Cascading Failure: Cavitation Origin"  # ✅ UBAH
+        system_result["diagnosis"] = "Cascading Failure: Cavitation Origin"
     # Pattern 3: High Current + Low Efficiency
-    if (elec_result.get("diagnosis") == "HIGH_CURRENT_NORMAL_OUTPUT" and
+    if (elec_result.get("diagnosis") == "OVER_LOAD" and
         hyd_fault == "efficiency"):
         correlation_bonus += 10
         correlated_faults.append("High electrical input + low hydraulic output → internal mechanical/hydraulic loss")
-        system_result["diagnosis"] = "Internal Loss Investigation Required"  # ✅ UBAH
+        system_result["diagnosis"] = "Internal Loss Investigation Required"
     # Temperature-based correlation
     if temp_data:
         temp_adjustment, temp_notes = calculate_temperature_confidence_adjustment(
@@ -677,7 +692,7 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
         if temp_data.get("Motor_DE") and temp_data.get("Pump_DE"):
             if temp_data["Motor_DE"] > temp_data["Pump_DE"] + 10:
                 correlated_faults.append("Motor DE > Pump DE → Possible electrical origin")
-    # ✅ SEVERITY: Ambil yang tertinggi dari 3 domain
+    # Severity: Ambil yang tertinggi dari 3 domain
     severities = [mech_sev, hyd_sev, elec_sev]
     if "High" in severities:
         system_result["severity"] = "High"
@@ -692,12 +707,12 @@ def aggregate_cross_domain_diagnosis(mech_result, hyd_result, elec_result,
                 system_result["severity"] = "High"
                 correlated_faults.append("⚠️ Critical bearing temperature detected")
                 break
-    # ✅ CONFIDENCE: Base dari rata-rata domain + correlation bonus
+    # Confidence: Base dari rata-rata domain + correlation bonus
     confidences = [r.get("confidence", 0) for r in [mech_result, hyd_result, elec_result]
                    if r.get("confidence", 0) > 0]
     base_confidence = np.mean(confidences) if confidences else 0
     system_result["confidence"] = min(95, int(base_confidence + correlation_bonus))
-    # ✅ CORRELATION NOTES: Jelas bedakan ada korelasi atau tidak
+    # Correlation Notes
     system_result["correlation_notes"] = correlated_faults if correlated_faults else ["Tidak ada korelasi kuat antar domain terdeteksi"]
     return system_result
 
@@ -710,9 +725,8 @@ def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data,
     lines.append(f"MULTI-DOMAIN PUMP DIAGNOSTIC REPORT - {machine_id.upper()}")
     lines.append(f"Generated: {timestamp}")
     lines.append(f"RPM: {rpm} | 1x RPM: {rpm/60:.2f} Hz")
-    lines.append(f"Standards: ISO 10816-3/7 (Mech) | API 610 (Hyd) | IEC 60034 (Elec)")  # ✅ IEC
+    lines.append(f"Standards: ISO 10816-3/7 (Mech) | API 610 (Hyd) | IEC 60034 (Elec)")
     lines.append("")
-    # ✅ FIXED: Add temperature section
     if temp_data:
         lines.append("=== BEARING TEMPERATURE ===")
         lines.append(f"Pump_DE: {temp_data.get('Pump_DE', 'N/A')}°C | Pump_NDE: {temp_data.get('Pump_NDE', 'N/A')}°C")
@@ -745,7 +759,7 @@ def generate_unified_csv_report(machine_id, rpm, timestamp, mech_data, hyd_data,
         lines.append(f"Voltage L1-L2: {e.get('v_l1l2', 0):.1f}V | L2-L3: {e.get('v_l2l3', 0):.1f}V | L3-L1: {e.get('v_l3l1', 0):.1f}V")
         lines.append(f"Current L1: {e.get('i_l1', 0):.1f}A | L2: {e.get('i_l2', 0):.1f}A | L3: {e.get('i_l3', 0):.1f}A")
         lines.append(f"Voltage Unbalance: {elec_data.get('voltage_unbalance', 0):.2f}% | Current Unbalance: {elec_data.get('current_unbalance', 0):.2f}%")
-        lines.append(f"Load Estimate: {elec_data.get('load_estimate', 0):.1f}% | PF: {e.get('power_factor', 0):.2f}")
+        lines.append(f"Load Estimate: {elec_data.get('load_estimate', 0):.1f}%")
         lines.append(f"Diagnosis: {elec_data.get('diagnosis', 'N/A')} | Confidence: {elec_data.get('confidence', 0)}% | Severity: {elec_data.get('severity', 'N/A')}")
     lines.append("")
     lines.append("=== INTEGRATED DIAGNOSIS ===")
@@ -1138,11 +1152,12 @@ def main():
                 • Rekomendasi: tingkatkan suction pressure atau turunkan fluid temperature
                 """)
     # ========================================================================
-    # TAB 3: ELECTRICAL CONDITION ANALYSIS
+    # TAB 3: ELECTRICAL CONDITION ANALYSIS (SIMPLIFIED)
     # ========================================================================
     with tab_elec:
         st.header("⚡ Electrical Condition Analysis")
         st.caption("3-Phase Voltage/Current | Unbalance Detection | Motor Load Estimation")
+        # ✅ SIMPLIFIED: Only 2 nameplate parameters needed
         with st.expander("⚙️ Motor Nameplate (Minimal)", expanded=True):
             col1, col2 = st.columns(2)
             with col1:
@@ -1152,9 +1167,9 @@ def main():
                 fla = st.number_input("Full Load Amps - FLA (A)", min_value=10, max_value=500, value=85, step=5, key="rated_i",
                                       help="Dari nameplate motor - acuan load capacity")
             st.caption("💡 Hanya 2 parameter nameplate yang diperlukan untuk voltage/current analysis")
-        
         st.subheader("📊 Pengukuran 3-Phase")
-        col1, col2 = st.columns(2)  # ✅ CHANGE: 3 columns → 2 columns
+        # ✅ SIMPLIFIED: 2 columns instead of 3 (removed Power & Frequency column)
+        col1, col2 = st.columns(2)
         with col1:
             st.caption("Voltage (Line-to-Line)")
             v_l1l2 = st.number_input("L1-L2 (V)", min_value=0.0, value=400.0, step=1.0, key="v_l1l2")
@@ -1165,14 +1180,13 @@ def main():
             i_l1 = st.number_input("L1 (A)", min_value=0.0, value=82.0, step=0.5, key="i_l1")
             i_l2 = st.number_input("L2 (A)", min_value=0.0, value=84.0, step=0.5, key="i_l2")
             i_l3 = st.number_input("L3 (A)", min_value=0.0, value=83.0, step=0.5, key="i_l3")
-
+        # ✅ SIMPLIFIED: Real-time calculation display (3 columns instead of 4)
         with st.expander("📈 Perhitungan Real-Time", expanded=True):
             elec_calc = calculate_electrical_parameters(
                 v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3,
-                rated_voltage, 
-                fla                     # ✅ CHANGE: rated_current → fla (lebih jelas)
+                rated_voltage, fla
             )
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Voltage Unbalance", f"{elec_calc['voltage_unbalance_percent']:.2f}%",
                           delta="⚠️ Warning" if elec_calc['voltage_unbalance_percent'] > ELECTRICAL_LIMITS["voltage_unbalance_warning"] else "✅ OK")
@@ -1181,35 +1195,24 @@ def main():
                           delta="⚠️ Warning" if elec_calc['current_unbalance_percent'] > ELECTRICAL_LIMITS["current_unbalance_warning"] else "✅ OK")
             with col3:
                 st.metric("Load Estimate", f"{elec_calc['load_estimate_percent']:.1f}%")
-            with col4:
-                st.metric("Est. Power", f"{elec_calc['electrical_power_kw']:.1f} kW")
             if not elec_calc["voltage_within_tolerance"]:
                 st.warning(f"⚠️ Voltage {elec_calc['v_avg']:.1f}V outside tolerance ({ELECTRICAL_LIMITS['voltage_tolerance_low']}-{ELECTRICAL_LIMITS['voltage_tolerance_high']}% of {rated_voltage}V)")
-        st.subheader("🔍 Observasi Visual & Sensorik")
-        col1, col2 = st.columns(2)
-        with col1:
-            motor_temp = st.radio("Motor Surface Temperature",
-                                  ["Normal (<70°C)", "Hangat (70-90°C)", "Panas (>90°C)"], index=0, key="motor_temp")
-            panel_condition = st.radio("Panel/Kabel Condition",
-                                       ["Normal", "Hangat", "Panas berlebih"], index=0, key="panel_cond")
-        with col2:
-            noise_elec = st.radio("Electrical Noise",
-                                  ["Tidak ada", "Dengung normal", "Buzzing/arcing"], index=0, key="noise_elec")
-            odor = st.radio("Bau/Asap",
-                            ["Tidak ada", "Bau isolasi", "Bau gosong"], index=0, key="odor")
+        # ✅ SIMPLIFIED: Removed visual/sensory observations section
         if st.button("⚡ Generate Electrical Diagnosis", type="primary", key="run_elec"):
             with st.spinner("Menganalisis kondisi electrical..."):
+                # ✅ SIMPLIFIED: Only rated_voltage and fla needed
                 motor_specs = {
                     "rated_voltage": rated_voltage,
-                    "fla": fla  # ✅ CHANGE: rated_current → fla
+                    "fla": fla
                 }
-                elec_result = diagnose_electrical_condition(elec_calc, motor_specs)  # ✅ REMOVE: observations
+                # ✅ SIMPLIFIED: No observations parameter
+                elec_result = diagnose_electrical_condition(elec_calc, motor_specs)
                 st.session_state.elec_result = elec_result
+                # ✅ SIMPLIFIED: No power_factor in measurements
                 st.session_state.elec_data = {
                     "measurements": {
                         "v_l1l2": v_l1l2, "v_l2l3": v_l2l3, "v_l3l1": v_l3l1,
-                        "i_l1": i_l1, "i_l2": i_l2, "i_l3": i_l3,
-                        "power_factor": power_factor
+                        "i_l1": i_l1, "i_l2": i_l2, "i_l3": i_l3
                     },
                     "voltage_unbalance": elec_calc["voltage_unbalance_percent"],
                     "current_unbalance": elec_calc["current_unbalance_percent"],
@@ -1231,7 +1234,7 @@ def main():
             if result["diagnosis"] != "NORMAL_ELECTRICAL":
                 st.info(get_electrical_recommendation(result["diagnosis"], result["severity"]))
     # ========================================================================
-    # TAB 4: INTEGRATED SUMMARY - ✅ FIX: FULL WIDTH DISPLAY
+    # TAB 4: INTEGRATED SUMMARY
     # ========================================================================
     with tab_integrated:
         st.header("🔗 Integrated Diagnostic Summary")
@@ -1270,79 +1273,73 @@ def main():
                     temp_data
                 )
                 st.session_state.integrated_result = integrated_result
-            # ✅ FIX: Gunakan container lebar penuh untuk diagnosis text panjang
-            st.subheader("📊 Overall Assessment")
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                # ✅ Diagnosis text dengan width penuh (tidak terpotong)
-                st.markdown(f"""
-                <div style="background-color:#f0f2f6; padding:15px; border-radius:8px; border-left:5px solid #1E3A5F">
+                st.subheader("📊 Overall Assessment")
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.markdown(f"""
+                    <div style="background-color:#f0f2f6; padding:15px; border-radius:8px; border-left:5px solid #1E3A5F">
                     <h4 style="margin:0 0 10px 0; color:#1E3A5F">🔗 Integrated Diagnosis</h4>
                     <p style="margin:0; font-size:1.1em; font-weight:600; color:#2c3e50; word-wrap:break-word; white-space:normal;">
-                        {integrated_result["diagnosis"]}
+                    {integrated_result["diagnosis"]}
                     </p>
-                </div>
-                """, unsafe_allow_html=True)
-            with col2:
-                # ✅ Severity dengan color coding
-                severity_config = {
-                    "Low": ("🟢", "#27ae60"),
-                    "Medium": ("🟠", "#f39c12"),
-                    "High": ("🔴", "#c0392b")
-                }
-                sev_icon, sev_color = severity_config.get(integrated_result["severity"], ("⚪", "#95a5a6"))
-                st.markdown(f"""
-                <div style="background-color:#f0f2f6; padding:15px; border-radius:8px; border-left:5px solid {sev_color}">
-                    <h4 style="margin:0 0 10px 0; color:#1E3A5F">⚠️ Overall Severity</h4>
-                    <p style="margin:0; font-size:1.5em; font-weight:700; color:{sev_color};">
-                        {sev_icon} {integrated_result["severity"]}
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-            # ✅ Confidence & Correlation dalam row terpisah
-            col3, col4, col5 = st.columns(3)
-            with col3:
-                st.metric("Confidence", f"{integrated_result['confidence']}%")
-            with col4:
-                correlation_text = "Detected" if integrated_result['correlation_notes'] and integrated_result['correlation_notes'][0] != "Tidak ada korelasi kuat antar domain terdeteksi" else "None"
-                st.metric("Cross-Domain Correlation", correlation_text)
-            with col5:
-                has_valid_temp = (
-                    temp_data and 
-                    any(v and v > 0 for v in temp_data.values())
-                )
-                temp_status = "Available" if has_valid_temp else "N/A"
-                st.metric("Temperature Data", temp_status)
-            if temp_data:
-                with st.expander("🌡️ Temperature Analysis Summary", expanded=True):
-                    temp_cols = st.columns(4)
-                    with temp_cols[0]:
-                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Pump_DE", 0))
-                        st.metric("Pump DE", f"{temp_data.get('Pump_DE', 0)}°C", temp_status)
-                    with temp_cols[1]:
-                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Pump_NDE", 0))
-                        st.metric("Pump NDE", f"{temp_data.get('Pump_NDE', 0)}°C", temp_status)
-                    with temp_cols[2]:
-                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Motor_DE", 0))
-                        st.metric("Motor DE", f"{temp_data.get('Motor_DE', 0)}°C", temp_status)
-                    with temp_cols[3]:
-                        temp_status, temp_color, _ = get_temperature_status(temp_data.get("Motor_NDE", 0))
-                        st.metric("Motor NDE", f"{temp_data.get('Motor_NDE', 0)}°C", temp_status)
-                    if integrated_result.get("temperature_notes"):
-                        st.info("**Temperature Insights:**\n" + "\n".join(integrated_result["temperature_notes"]))
-            with st.expander("🗺️ Fault Propagation Map", expanded=True):
-                # ✅ Correlation Notes dengan width penuh
-                st.markdown("**📌 Cross-Domain Correlation Notes:**")
-                for note in integrated_result["correlation_notes"]:
-                    st.markdown(f"""
-                    <div style="background-color:#fff3cd; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #ffc107;">
-                        {note}
                     </div>
                     """, unsafe_allow_html=True)
-                # ✅ Propagation Path dengan formatting yang lebih baik
-                st.markdown("**🔗 Propagation Path:**")
-                st.markdown(f"""
-                <div style="background-color:#f8f9fa; padding:15px; border-radius:8px; font-family:monospace; font-size:0.95em;">
+                with col2:
+                    severity_config = {
+                        "Low": ("🟢", "#27ae60"),
+                        "Medium": ("🟠", "#f39c12"),
+                        "High": ("🔴", "#c0392b")
+                    }
+                    sev_icon, sev_color = severity_config.get(integrated_result["severity"], ("⚪", "#95a5a6"))
+                    st.markdown(f"""
+                    <div style="background-color:#f0f2f6; padding:15px; border-radius:8px; border-left:5px solid {sev_color}">
+                    <h4 style="margin:0 0 10px 0; color:#1E3A5F">⚠️ Overall Severity</h4>
+                    <p style="margin:0; font-size:1.5em; font-weight:700; color:{sev_color};">
+                    {sev_icon} {integrated_result["severity"]}
+                    </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                col3, col4, col5 = st.columns(3)
+                with col3:
+                    st.metric("Confidence", f"{integrated_result['confidence']}%")
+                with col4:
+                    correlation_text = "Detected" if integrated_result['correlation_notes'] and integrated_result['correlation_notes'][0] != "Tidak ada korelasi kuat antar domain terdeteksi" else "None"
+                    st.metric("Cross-Domain Correlation", correlation_text)
+                with col5:
+                    has_valid_temp = (
+                        temp_data and
+                        any(v and v > 0 for v in temp_data.values())
+                    )
+                    temp_status = "Available" if has_valid_temp else "N/A"
+                    st.metric("Temperature Data", temp_status)
+                if temp_data:
+                    with st.expander("🌡️ Temperature Analysis Summary", expanded=True):
+                        temp_cols = st.columns(4)
+                        with temp_cols[0]:
+                            temp_status, temp_color, _ = get_temperature_status(temp_data.get("Pump_DE", 0))
+                            st.metric("Pump DE", f"{temp_data.get('Pump_DE', 0)}°C", temp_status)
+                        with temp_cols[1]:
+                            temp_status, temp_color, _ = get_temperature_status(temp_data.get("Pump_NDE", 0))
+                            st.metric("Pump NDE", f"{temp_data.get('Pump_NDE', 0)}°C", temp_status)
+                        with temp_cols[2]:
+                            temp_status, temp_color, _ = get_temperature_status(temp_data.get("Motor_DE", 0))
+                            st.metric("Motor DE", f"{temp_data.get('Motor_DE', 0)}°C", temp_status)
+                        with temp_cols[3]:
+                            temp_status, temp_color, _ = get_temperature_status(temp_data.get("Motor_NDE", 0))
+                            st.metric("Motor NDE", f"{temp_data.get('Motor_NDE', 0)}°C", temp_status)
+                        if integrated_result.get("temperature_notes"):
+                            st.info("**Temperature Insights:**\n" + "\n".join(integrated_result["temperature_notes"]))
+                with st.expander("🗺️ Fault Propagation Map", expanded=True):
+                    st.markdown("**📌 Cross-Domain Correlation Notes:**")
+                    for note in integrated_result["correlation_notes"]:
+                        st.markdown(f"""
+                        <div style="background-color:#fff3cd; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #ffc107;">
+                        {note}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.markdown("**🔗 Propagation Path:**")
+                    st.markdown(f"""
+                    <div style="background-color:#f8f9fa; padding:15px; border-radius:8px; font-family:monospace; font-size:0.95em;">
                     <div style="color:#e74c3c; font-weight:bold;">⚡ Electrical: {st.session_state.elec_result['diagnosis']}</div>
                     <div style="color:#7f8c8d; margin:5px 0;">│</div>
                     <div style="color:#7f8c8d; margin:5px 0;">▼</div>
@@ -1352,44 +1349,43 @@ def main():
                     <div style="color:#7f8c8d; margin:5px 0;">▼</div>
                     <div style="color:#7f8c8d; margin:5px 0;">│</div>
                     <div style="color:#27ae60; font-weight:bold;">💧 Hydraulic: {st.session_state.hyd_result['diagnosis']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                # ✅ Temperature Notes jika ada
-                if integrated_result.get("temperature_notes"):
-                    st.markdown("**🌡️ Temperature Insights:**")
-                    for temp_note in integrated_result["temperature_notes"]:
-                        st.markdown(f"""
-                        <div style="background-color:#d5f5e3; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #27ae60;">
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if integrated_result.get("temperature_notes"):
+                        st.markdown("**🌡️ Temperature Insights:**")
+                        for temp_note in integrated_result["temperature_notes"]:
+                            st.markdown(f"""
+                            <div style="background-color:#d5f5e3; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #27ae60;">
                             {temp_note}
-                        </div>
-                        """, unsafe_allow_html=True)
-            st.divider()
-            st.subheader("📥 Export Report")
-            if st.button("📊 Generate Unified CSV Report", type="primary"):
-                csv_report = generate_unified_csv_report(
-                    machine_id, rpm,
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    st.session_state.get("mech_data", {}),
-                    st.session_state.get("hyd_data", {}),
-                    st.session_state.get("elec_data", {}),
-                    integrated_result,
-                    temp_data
-                )
-                st.download_button(
-                    label="📥 Download CSV Report",
-                    data=csv_report,
-                    file_name=f"PUMP_DIAG_{machine_id}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                st.success("✅ Report generated successfully!")
-            st.divider()
-            st.caption("""
-            **Standar Acuan**: ISO 10816-3/7 | ISO 13373-1 | API 610 | **IEC 60034** | API 670
-            **Algoritma**: Hybrid rule-based dengan cross-domain correlation + confidence scoring + temperature analysis
-            ⚠️ Decision Support System - Verifikasi oleh personnel kompeten untuk keputusan kritis
-            🏭 Pertamina Patra Niaga - Asset Integrity Management
-            """)
+                            </div>
+                            """, unsafe_allow_html=True)
+                st.divider()
+                st.subheader("📥 Export Report")
+                if st.button("📊 Generate Unified CSV Report", type="primary"):
+                    csv_report = generate_unified_csv_report(
+                        machine_id, rpm,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        st.session_state.get("mech_data", {}),
+                        st.session_state.get("hyd_data", {}),
+                        st.session_state.get("elec_data", {}),
+                        integrated_result,
+                        temp_data
+                    )
+                    st.download_button(
+                        label="📥 Download CSV Report",
+                        data=csv_report,
+                        file_name=f"PUMP_DIAG_{machine_id}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    st.success("✅ Report generated successfully!")
+                st.divider()
+                st.caption("""
+                **Standar Acuan**: ISO 10816-3/7 | ISO 13373-1 | API 610 | **IEC 60034** | API 670
+                **Algoritma**: Hybrid rule-based dengan cross-domain correlation + confidence scoring + temperature analysis
+                ⚠️ Decision Support System - Verifikasi oleh personnel kompeten untuk keputusan kritis
+                🏭 Pertamina Patra Niaga - Asset Integrity Management
+                """)
 
 if __name__ == "__main__":
     main()
