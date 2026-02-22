@@ -22,16 +22,16 @@ ACCEL_BASELINE = {
     "Band3 (5-16kHz)": 0.15
 }
 
-# ✅ Bearing Temperature Thresholds (API 610, API 670, SKF, NEMA MG-1)
+# ✅ Bearing Temperature Thresholds (IEC 60034-1, API 610, SKF)
 BEARING_TEMP_LIMITS = {
-    "normal_max": 70,
-    "elevated_min": 70,
-    "elevated_max": 85,
-    "warning_min": 85,
-    "warning_max": 95,
-    "critical_min": 95,
-    "delta_threshold": 15,
-    "ambient_reference": 30
+    "normal_max": 70,        # Sama (conservative)
+    "elevated_min": 70,      # Sama
+    "elevated_max": 80,      # ❗ IEC lebih ketat (NEMA: 85°C)
+    "warning_min": 80,       # ❗ IEC lebih ketat
+    "warning_max": 90,       # ❗ IEC lebih ketat (NEMA: 95°C)
+    "critical_min": 90,      # ❗ IEC lebih ketat
+    "delta_threshold": 15,   # Sama
+    "ambient_reference": 30  # Sama
 }
 
 # --- Hydraulic Fluid Properties (BBM Specific - Pertamina) ---
