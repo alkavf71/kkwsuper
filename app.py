@@ -1376,7 +1376,11 @@ def main():
                 correlation_text = "Detected" if integrated_result['correlation_notes'] and integrated_result['correlation_notes'][0] != "Tidak ada korelasi kuat antar domain terdeteksi" else "None"
                 st.metric("Cross-Domain Correlation", correlation_text)
             with col5:
-                temp_status = "Available" if temp_data else "N/A"
+                has_valid_temp = (
+                    temp_data and 
+                    any(v and v > 0 for v in temp_data.values())
+                )
+                temp_status = "Available" if has_valid_temp else "N/A"
                 st.metric("Temperature Data", temp_status)
             if temp_data:
                 with st.expander("🌡️ Temperature Analysis Summary", expanded=True):
