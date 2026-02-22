@@ -59,16 +59,17 @@ FLUID_PROPERTIES = {
     }
 }
 
-# --- Electrical Thresholds (NEMA MG-1 & Practical Limits) ---
+# --- Electrical Thresholds (IEC 60034-1 & Practical Limits) ---
 ELECTRICAL_LIMITS = {
-    "voltage_unbalance_warning": 2.0,
-    "voltage_unbalance_critical": 3.5,
-    "current_unbalance_warning": 5.0,
-    "current_unbalance_critical": 10.0,
-    "voltage_tolerance_low": 90,
-    "voltage_tolerance_high": 110,
-    "current_load_warning": 90,
-    "current_load_critical": 100
+    "voltage_unbalance_warning": 1.0,      # ❗ IEC lebih ketat (NEMA: 2.0%)
+    "voltage_unbalance_critical": 2.0,     # ❗ IEC lebih ketat (NEMA: 3.5%)
+    "current_unbalance_warning": 5.0,      # Sama
+    "current_unbalance_critical": 8.0,     # ❗ IEC lebih ketat (NEMA: 10.0%)
+    "voltage_tolerance_low": 90,           # Sama (±10%)
+    "voltage_tolerance_high": 110,         # Sama (±10%)
+    "current_load_warning": 90,            # Sama
+    "current_load_critical": 100,          # ❗ IEC tidak ada Service Factor (NEMA: 115%)
+    "service_factor": 1.0                  # ❗ IEC default SF = 1.0 (NEMA: 1.15)
 }
 
 # ============================================================================
