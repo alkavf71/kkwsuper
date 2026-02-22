@@ -1199,15 +1199,9 @@ def main():
             with st.spinner("Menganalisis kondisi electrical..."):
                 motor_specs = {
                     "rated_voltage": rated_voltage,
-                    "rated_current": rated_current,
-                    "rated_power": rated_power
+                    "fla": fla  # ✅ CHANGE: rated_current → fla
                 }
-                observations = {
-                    "motor_temperature": motor_temp,
-                    "panel_condition": panel_condition,
-                    "electrical_noise": noise_elec
-                }
-                elec_result = diagnose_electrical_condition(elec_calc, motor_specs, observations)
+                elec_result = diagnose_electrical_condition(elec_calc, motor_specs)  # ✅ REMOVE: observations
                 st.session_state.elec_result = elec_result
                 st.session_state.elec_data = {
                     "measurements": {
