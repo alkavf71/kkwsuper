@@ -535,118 +535,73 @@ def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: 
     rated_voltage = motor_specs.get("rated_voltage", 400)
     # ✅ REMOVE: motor_temp, panel_condition, noise_elec, odor (tidak dalam scope)
     # ✅ FOCUS: Voltage, Current, Load saja
-    critical_fault_detected = False
-    critical_diagnosis = None
-    critical_confidence = 0
-    critical_severity = "High"
-    if noise_elec == "Buzzing/arcing":
-        critical_fault_detected = True
-        critical_diagnosis = "ELECTRICAL_ARCING"
-        critical_confidence = 90
-        result["details"]["critical_observation"] = "Buzzing/arcing noise → electrical discharge risk"
-    if odor == "Bau gosong":
-        critical_fault_detected = True
-        critical_diagnosis = "INSULATION_OVERHEAT"
-        critical_confidence = 95
-        result["details"]["critical_observation"] = "Burning smell → insulation breakdown risk"
-    if panel_condition == "Panas berlebih":
-        critical_fault_detected = True
-        critical_diagnosis = "CONNECTION_OVERHEAT"
-        critical_confidence = 85
-        result["details"]["critical_observation"] = "Panel overheating → high resistance connection"
-    if motor_temp == "Panas (>90°C)":
-        critical_fault_detected = True
-        critical_diagnosis = "MOTOR_OVERHEAT"
-        critical_confidence = 85
-        result["details"]["critical_observation"] = "Motor temperature >90°C → overload or internal fault"
-    if critical_fault_detected:
-        result["diagnosis"] = critical_diagnosis
-        result["confidence"] = critical_confidence
-        result["severity"] = critical_severity
-        result["fault_type"] = "critical_safety"
-        result["details"]["voltage_unbalance"] = voltage_unbalance
-        result["details"]["current_unbalance"] = current_unbalance
-        result["details"]["load_estimate"] = load_estimate
-        return result
-    if not voltage_within_tolerance and v_avg < rated_voltage:
-        severity = "High" if load_estimate > 80 else "Medium"
-        result["diagnosis"] = "UNDER_VOLTAGE"
-        result["confidence"] = 70
-        result["severity"] = severity
-        result["fault_type"] = "voltage"
+        # ✅ 1. Under/Over Voltage
+    if not voltage_within_tolerance:
+        if v_avg < rated_voltage * 0.9:
+            result["diagnosis"] = "UNDER_VOLTAGE"
+            result["confidence"] = 70
+            result["severity"] = "High" if load_estimate > 80 else "Medium"
+            result["fault_type"] = "voltage"
+        elif v_avg > rated_voltage * 1.1:
+            result["diagnosis"] = "OVER_VOLTAGE"
+            result["confidence"] = 70
+            result["severity"] = "Medium"
+            result["fault_type"] = "voltage"
         result["details"] = {
             "voltage_unbalance": voltage_unbalance,
             "current_unbalance": current_unbalance,
             "load_estimate": load_estimate
         }
         return result
+    
+    # ✅ 2. Voltage Unbalance
     if voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_critical"]:
         result["diagnosis"] = "VOLTAGE_UNBALANCE"
         result["confidence"] = 75
         result["severity"] = "High"
         result["fault_type"] = "voltage"
-        result["details"] = {
-            "voltage_unbalance": voltage_unbalance,
-            "current_unbalance": current_unbalance,
-            "load_estimate": load_estimate
-        }
-        return result
     elif voltage_unbalance > ELECTRICAL_LIMITS["voltage_unbalance_warning"]:
         result["diagnosis"] = "VOLTAGE_UNBALANCE"
         result["confidence"] = 65
         result["severity"] = "Medium"
         result["fault_type"] = "voltage"
-        result["details"] = {
-            "voltage_unbalance": voltage_unbalance,
-            "current_unbalance": current_unbalance,
-            "load_estimate": load_estimate
-        }
-        return result
-    if current_unbalance > ELECTRICAL_LIMITS["current_unbalance_critical"]:
-        result["diagnosis"] = "CURRENT_UNBALANCE"
-        result["confidence"] = 70
-        result["severity"] = "High"
-        result["fault_type"] = "current"
-        result["details"] = {
-            "voltage_unbalance": voltage_unbalance,
-            "current_unbalance": current_unbalance,
-            "load_estimate": load_estimate
-        }
-        return result
-    elif current_unbalance > ELECTRICAL_LIMITS["current_unbalance_warning"]:
-        result["diagnosis"] = "CURRENT_UNBALANCE"
-        result["confidence"] = 60
-        result["severity"] = "Medium"
-        result["fault_type"] = "current"
-        result["details"] = {
-            "voltage_unbalance": voltage_unbalance,
-            "current_unbalance": current_unbalance,
-            "load_estimate": load_estimate
-        }
-        return result
-    if load_estimate > ELECTRICAL_LIMITS["current_load_critical"]:
-        result["diagnosis"] = "HIGH_CURRENT_NORMAL_OUTPUT"
-        result["confidence"] = 55
-        result["severity"] = "Medium"
-        result["fault_type"] = "load"
-        result["details"] = {
-            "voltage_unbalance": voltage_unbalance,
-            "current_unbalance": current_unbalance,
-            "load_estimate": load_estimate
-        }
-        return result
-    if motor_temp == "Hangat (70-90°C)" or panel_condition == "Hangat":
-        result["diagnosis"] = "NORMAL_ELECTRICAL"
-        result["confidence"] = 85
-        result["severity"] = "Low"
-        result["fault_type"] = "normal"
-        result["details"] = {
-            "voltage_unbalance": voltage_unbalance,
-            "current_unbalance": current_unbalance,
-            "load_estimate": load_estimate,
-            "observation_note": "Temperature elevated - monitor trend"
-        }
-        return result
+    else:
+        # ✅ 3. Current Unbalance
+        if current_unbalance > ELECTRICAL_LIMITS["current_unbalance_critical"]:
+            result["diagnosis"] = "CURRENT_UNBALANCE"
+            result["confidence"] = 70
+            result["severity"] = "High"
+            result["fault_type"] = "current"
+        elif current_unbalance > ELECTRICAL_LIMITS["current_unbalance_warning"]:
+            result["diagnosis"] = "CURRENT_UNBALANCE"
+            result["confidence"] = 60
+            result["severity"] = "Medium"
+            result["fault_type"] = "current"
+        else:
+            # ✅ 4. Load Capacity
+            if load_estimate > ELECTRICAL_LIMITS["current_load_critical"]:
+                result["diagnosis"] = "OVER_LOAD"  # ✅ CHANGE: HIGH_CURRENT_NORMAL_OUTPUT → OVER_LOAD
+                result["confidence"] = 55
+                result["severity"] = "Medium"
+                result["fault_type"] = "load"
+            elif load_estimate < 50:  # ✅ ADD: Under current detection
+                result["diagnosis"] = "UNDER_LOAD"
+                result["confidence"] = 50
+                result["severity"] = "Low"
+                result["fault_type"] = "load"
+            else:
+                # ✅ 5. Normal
+                result["diagnosis"] = "NORMAL_ELECTRICAL"
+                result["confidence"] = 95
+                result["severity"] = "Low"
+                result["fault_type"] = "normal"
+    
+    result["details"] = {
+        "voltage_unbalance": voltage_unbalance,
+        "current_unbalance": current_unbalance,
+        "load_estimate": load_estimate
+    }
+    return result
     result["diagnosis"] = "NORMAL_ELECTRICAL"
     result["confidence"] = 95
     result["severity"] = "Low"
