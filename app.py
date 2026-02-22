@@ -1168,7 +1168,9 @@ def main():
 
         with st.expander("📈 Perhitungan Real-Time", expanded=True):
             elec_calc = calculate_electrical_parameters(
-                v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3, power_factor, rated_voltage, rated_current
+                v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3,
+                rated_voltage, 
+                fla                     # ✅ CHANGE: rated_current → fla (lebih jelas)
             )
             col1, col2, col3, col4 = st.columns(4)
             with col1:
