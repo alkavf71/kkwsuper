@@ -1607,20 +1607,40 @@ def main():
                         st.info("**Temperature Insights:**\n" + "\n".join(integrated_result["temperature_notes"]))
             
             with st.expander("🗺️ Fault Propagation Map", expanded=True):
-                st.write("**Cross-Domain Correlation Notes:**")
+                # ✅ Correlation Notes dengan width penuh
+                st.markdown("**📌 Cross-Domain Correlation Notes:**")
                 for note in integrated_result["correlation_notes"]:
-                    st.write(f"• {note}")
+                    st.markdown(f"""
+                    <div style="background-color:#fff3cd; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #ffc107;">
+                        {note}
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                st.write("\n**Propagation Path:**")
-                st.text(f"""
-    ⚡ Electrical: {st.session_state.elec_result['diagnosis']}
-         │
-         ▼
-    🔧 Mechanical: {st.session_state.mech_result['diagnosis']}
-         │
-         ▼
-    💧 Hydraulic: {st.session_state.hyd_result['diagnosis']}
-                """)
+                # ✅ Propagation Path dengan formatting yang lebih baik
+                st.markdown("**🔗 Propagation Path:**")
+                st.markdown(f"""
+                <div style="background-color:#f8f9fa; padding:15px; border-radius:8px; font-family:monospace; font-size:0.95em;">
+                    <div style="color:#e74c3c; font-weight:bold;">⚡ Electrical: {st.session_state.elec_result['diagnosis']}</div>
+                    <div style="color:#7f8c8d; margin:5px 0;">│</div>
+                    <div style="color:#7f8c8d; margin:5px 0;">▼</div>
+                    <div style="color:#7f8c8d; margin:5px 0;">│</div>
+                    <div style="color:#3498db; font-weight:bold;">🔧 Mechanical: {st.session_state.mech_result['diagnosis']}</div>
+                    <div style="color:#7f8c8d; margin:5px 0;">│</div>
+                    <div style="color:#7f8c8d; margin:5px 0;">▼</div>
+                    <div style="color:#7f8c8d; margin:5px 0;">│</div>
+                    <div style="color:#27ae60; font-weight:bold;">💧 Hydraulic: {st.session_state.hyd_result['diagnosis']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # ✅ Temperature Notes jika ada
+    if integrated_result.get("temperature_notes"):
+        st.markdown("**🌡️ Temperature Insights:**")
+        for temp_note in integrated_result["temperature_notes"]:
+            st.markdown(f"""
+            <div style="background-color:#d5f5e3; padding:10px; border-radius:5px; margin:5px 0; border-left:4px solid #27ae60;">
+                {temp_note}
+            </div>
+            """, unsafe_allow_html=True)
             
             st.divider()
             st.subheader("📥 Export Report")
