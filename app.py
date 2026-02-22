@@ -1539,15 +1539,53 @@ def main():
                 
                 st.session_state.integrated_result = integrated_result
             
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Integrated Diagnosis", integrated_result["diagnosis"], 
-                         delta=f"{integrated_result['confidence']}%")
-            with col2:
-                severity_icon = {"Low":"🟢","Medium":"🟠","High":"🔴"}.get(integrated_result["severity"],"⚪")
-                st.metric("Overall Severity", f"{severity_icon} {integrated_result['severity']}")
-            with col3:
-                st.metric("Correlation Boost", f"+{integrated_result['confidence'] - 70}%" if integrated_result['confidence'] > 70 else "Standard")
+            # ✅ FIX: Gunakan container lebar penuh untuk diagnosis text panjang
+                st.subheader("📊 Overall Assessment")
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    # ✅ Diagnosis text dengan width penuh (tidak terpotong)
+                    st.markdown(f"""
+                    <div style="background-color:#f0f2f6; padding:15px; border-radius:8px; border-left:5px solid #1E3A5F">
+                        <h4 style="margin:0 0 10px 0; color:#1E3A5F">🔗 Integrated Diagnosis</h4>
+                        <p style="margin:0; font-size:1.1em; font-weight:600; color:#2c3e50; word-wrap:break-word; white-space:normal;">
+                            {integrated_result["diagnosis"]}
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    # ✅ Severity dengan color coding
+                    severity_config = {
+                        "Low": ("🟢", "#27ae60"),
+                        "Medium": ("🟠", "#f39c12"),
+                        "High": ("🔴", "#c0392b")
+                    }
+                    sev_icon, sev_color = severity_config.get(integrated_result["severity"], ("⚪", "#95a5a6"))
+                    
+                    st.markdown(f"""
+                    <div style="background-color:#f0f2f6; padding:15px; border-radius:8px; border-left:5px solid {sev_color}">
+                        <h4 style="margin:0 0 10px 0; color:#1E3A5F">⚠️ Overall Severity</h4>
+                        <p style="margin:0; font-size:1.5em; font-weight:700; color:{sev_color};">
+                            {sev_icon} {integrated_result["severity"]}
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # ✅ Confidence & Correlation dalam row terpisah
+                col3, col4, col5 = st.columns(3)
+                
+                with col3:
+                    st.metric("Confidence", f"{integrated_result['confidence']}%")
+                
+                with col4:
+                    correlation_text = "Detected" if integrated_result['correlation_notes'] and integrated_result['correlation_notes'][0] != "Tidak ada korelasi kuat antar domain terdeteksi" else "None"
+                    st.metric("Cross-Domain Correlation", correlation_text)
+                
+                with col5:
+                    temp_status = "Available" if temp_data else "N/A"
+                    st.metric("Temperature Data", temp_status)
             
             if temp_data:
                 with st.expander("🌡️ Temperature Analysis Summary", expanded=True):
