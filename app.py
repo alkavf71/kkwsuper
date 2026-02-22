@@ -1015,6 +1015,47 @@ def main():
     tab_mech, tab_hyd, tab_elec, tab_integrated = st.tabs([
         "🔧 Mechanical", "💧 Hydraulic", "⚡ Electrical", "🔗 Integrated Summary"
     ])
+
+        with st.expander("⚙️ Motor Specifications (Nameplate)", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            # ✅ TAMBAH MOTOR STANDARD SELECTOR
+            motor_standard = st.selectbox(
+                "Motor Standard",
+                ["IEC 60034 (International)", "NEMA MG-1 (USA)"],
+                index=0,  # Default IEC untuk Indonesia
+                key="motor_standard"
+            )
+            
+            rated_voltage = st.number_input("Rated Voltage (V)", min_value=200, max_value=690, value=400, step=10, key="rated_v")
+            rated_current = st.number_input("Rated Current (A)", min_value=10, max_value=500, value=85, step=5, key="rated_i")
+            rated_power = st.number_input("Rated Power (kW)", min_value=1, max_value=500, value=45, step=1, key="rated_kw")
+        
+        with col2:
+            motor_efficiency = st.number_input("Motor Efficiency (%)", min_value=70, max_value=98, value=92, step=1, key="motor_eff")
+            connection_type = st.radio("Connection", ["Star", "Delta"], index=0, key="connection")
+            pf_default = st.number_input("Expected Power Factor", min_value=0.5, max_value=1.0, value=0.85, step=0.05, key="pf_default")
+        
+        # ✅ SIMPAN DI SHARED CONTEXT
+        st.session_state.shared_context["motor_standard"] = motor_standard
+        
+        # ✅ TAMPILKAN INFO STANDARD
+        if motor_standard == "IEC 60034 (International)":
+            st.info("""
+            **📋 IEC 60034 Standard:**
+            • Voltage Unbalance Critical: **2.0%** (lebih ketat dari NEMA 3.5%)
+            • Current Unbalance Critical: **8.0%** (lebih ketat dari NEMA 10.0%)
+            • Service Factor: **1.0** (tidak ada overload margin)
+            • Temperature Limits: Lebih konservatif
+            """)
+        else:
+            st.info("""
+            **📋 NEMA MG-1 Standard:**
+            • Voltage Unbalance Critical: **3.5%**
+            • Current Unbalance Critical: **10.0%**
+            • Service Factor: **1.15** (15% overload margin)
+            • Temperature Limits: Sedikit lebih tinggi
+            """)
     
     # ========================================================================
     # TAB 1: MECHANICAL VIBRATION ANALYSIS
