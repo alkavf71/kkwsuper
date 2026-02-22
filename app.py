@@ -318,15 +318,14 @@ def classify_hydraulic_performance(head_aktual, head_design, efficiency_aktual,
 # FUNGSI PERHITUNGAN - ELECTRICAL DOMAIN
 # ============================================================================
 def calculate_electrical_parameters(v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3,
-                                    power_factor, rated_voltage, rated_current):
+                                    rated_voltage, fla):  # ✅ CHANGE: rated_current → fla (lebih jelas)
     v_avg = (v_l1l2 + v_l2l3 + v_l3l1) / 3
     i_avg = (i_l1 + i_l2 + i_l3) / 3
     v_deviations = [abs(v - v_avg) for v in [v_l1l2, v_l2l3, v_l3l1]]
     voltage_unbalance = (max(v_deviations) / v_avg * 100) if v_avg > 0 else 0
     i_deviations = [abs(i - i_avg) for i in [i_l1, i_l2, i_l3]]
     current_unbalance = (max(i_deviations) / i_avg * 100) if i_avg > 0 else 0
-    load_estimate = (i_avg / rated_current * 100) if rated_current > 0 else 0
-    electrical_power = (np.sqrt(3) * v_avg * i_avg * power_factor / 1000) if v_avg > 0 and i_avg > 0 else 0
+    load_estimate = (i_avg / fla * 100) if fla > 0 else 0
     voltage_within_tolerance = (ELECTRICAL_LIMITS["voltage_tolerance_low"] <=
                                 (v_avg / rated_voltage * 100) <=
                                 ELECTRICAL_LIMITS["voltage_tolerance_high"])
@@ -336,7 +335,6 @@ def calculate_electrical_parameters(v_l1l2, v_l2l3, v_l3l1, i_l1, i_l2, i_l3,
         "voltage_unbalance_percent": voltage_unbalance,
         "current_unbalance_percent": current_unbalance,
         "load_estimate_percent": load_estimate,
-        "electrical_power_kw": electrical_power,
         "voltage_within_tolerance": voltage_within_tolerance
     }
 
