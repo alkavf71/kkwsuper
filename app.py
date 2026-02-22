@@ -518,7 +518,7 @@ def diagnose_hydraulic_single_point(hydraulic_calc, design_params, fluid_props,
 # ============================================================================
 # FUNGSI DIAGNOSA - ELECTRICAL DOMAIN
 # ============================================================================
-def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
+def diagnose_electrical_condition(electrical_calc, motor_specs):  # ✅ REMOVE: observations parameter
     result = {
         "diagnosis": "NORMAL_ELECTRICAL",
         "confidence": 0,
@@ -533,10 +533,8 @@ def diagnose_electrical_condition(electrical_calc, motor_specs, observations):
     voltage_within_tolerance = electrical_calc.get("voltage_within_tolerance", True)
     v_avg = electrical_calc.get("v_avg", 0)
     rated_voltage = motor_specs.get("rated_voltage", 400)
-    motor_temp = observations.get("motor_temperature", "Normal (<70°C)")
-    panel_condition = observations.get("panel_condition", "Normal")
-    noise_elec = observations.get("electrical_noise", "Tidak ada")
-    odor = observations.get("odor", "Tidak ada")
+    # ✅ REMOVE: motor_temp, panel_condition, noise_elec, odor (tidak dalam scope)
+    # ✅ FOCUS: Voltage, Current, Load saja
     critical_fault_detected = False
     critical_diagnosis = None
     critical_confidence = 0
