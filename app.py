@@ -1118,202 +1118,186 @@ def main():
                 st.info(get_mechanical_recommendation(result["diagnosis"], "Pump-Motor System", result["severity"]))
     
     # ========================================================================
-    # TAB 2: HYDRAULIC TROUBLESHOOTING (✅ REVISI LENGKAP DI SINI)
-    # ========================================================================
-    with tab_hyd:
-        st.header("💧 Hydraulic Troubleshooting")
-        st.caption("Single-Point Steady-State | Auto-Estimation for Missing OEM Data")
-        
-        # ✅ REVISI 1: TAMBAH FUNGSI HELPER UNTUK AUTO-ESTIMASI
-        def estimate_bep_efficiency(Q, H, P_motor, SG, motor_eff=0.90):
-            """
-            Estimasi BEP Efficiency dari data nameplate terbatas
-            motor_eff = estimasi efisiensi motor (default 90%)
-            """
-            P_hyd_design = (Q * H * SG * 9.81) / 3600  # kW
-            P_shaft_est = P_motor * motor_eff  # Estimasi daya poros
-            if P_shaft_est > 0 and P_hyd_design > 0:
-                eff = (P_hyd_design / P_shaft_est) * 100
-                return min(90, max(50, eff))  # Clamp ke range realistis 50-90%
-            return 75  # Default fallback
-        
-        def estimate_npshr_conservative(Q_m3h, fluid_type=None, vapor_pressure_kpa=None):
-            """
-            Estimasi NPSHr dengan pertimbangan vapor pressure fluida
-            """
-            # Base estimate dari flow
-            if Q_m3h < 50:
-                base_npshr = 3.0
-            elif Q_m3h < 200:
-                base_npshr = 4.0
-            else:
-                base_npshr = 5.5
+# TAB 2: HYDRAULIC TROUBLESHOOTING
+# ========================================================================
+with tab_hyd:
+    st.header("💧 Hydraulic Troubleshooting")
+    st.caption("Single-Point Steady-State Measurement | BBM Fluid Types")
     
-    # ✅ Tambahan: koreksi untuk fluida vapor pressure tinggi
-    if vapor_pressure_kpa and vapor_pressure_kpa > 30:  # Pertalite/Pertamax
-        # Tambahkan 3-5 m untuk kompensasi risiko kavitasi
-        correction = min(5.0, (vapor_pressure_kpa - 30) * 0.1)
-        return base_npshr + correction
+    # ✅ FUNGSI HELPER UNTUK AUTO-ESTIMASI
+    def estimate_bep_efficiency(Q, H, P_motor, SG, motor_eff=0.90):
+        """Estimasi BEP Efficiency dari data nameplate terbatas"""
+        P_hyd_design = (Q * H * SG * 9.81) / 3600
+        P_shaft_est = P_motor * motor_eff
+        if P_shaft_est > 0 and P_hyd_design > 0:
+            eff = (P_hyd_design / P_shaft_est) * 100
+            return min(90, max(50, eff))
+        return 75
     
-    return base_npshr
+    def estimate_npshr_conservative(Q_m3h):
+        """Estimasi konservatif NPSHr berdasarkan flow rate"""
+        if Q_m3h < 50:
+            return 3.0
+        elif Q_m3h < 200:
+            return 4.0
+        else:
+            return 5.5
+    
+    steady_verified = True
+    st.subheader("📊 Data Primer Hidrolik")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        suction_pressure = st.number_input("Suction Pressure [bar]", min_value=0.0, 
+                                           value=0.44, step=0.01, key="suction_p")
+        discharge_pressure = st.number_input("Discharge Pressure [bar]", min_value=0.0, 
+                                             value=3.73, step=0.01, key="discharge_p")
+        delta_p = discharge_pressure - suction_pressure
+        st.metric("ΔP", f"{delta_p:.2f} bar")
+    
+    with col2:
+        flow_rate = st.number_input("Flow Rate [m³/h]", min_value=0.0, value=100.0, 
+                                    step=1.0, key="flow_rate")
+        motor_power = st.number_input("Motor Power [kW]", min_value=0.0, 
+                                      value=15.0, step=0.5, key="motor_power")
+        fluid_temp = st.number_input("Fluid Temperature [°C]", min_value=0, max_value=100, 
+                                     value=40, step=1, key="fluid_temp")
+    
+    with col3:
+        fluid_props = FLUID_PROPERTIES[fluid_type]
+        sg = st.number_input("Specific Gravity", min_value=0.5, max_value=1.5, 
+                             value=fluid_props["sg"], step=0.01, key="sg_input")
+        st.caption(f"Auto dari {fluid_type}")
+        if delta_p > 0 and sg > 0:
+            head_calc = delta_p * 10.2 / sg
+            st.metric("Head Aktual", f"{head_calc:.1f} m")
+    
+    # ✅ DATA DESAIN DENGAN AUTO-ESTIMASI
+    with st.expander("📋 Data Nameplate (Wajib)", expanded=True):
+        st.caption("💡 Kosongkan BEP & NPSHr untuk estimasi otomatis")
         
-        steady_verified = True
-        st.subheader("📊 Data Primer Hidrolik")
-        col1, col2, col3 = st.columns(3)
-        
+        col1, col2 = st.columns(2)
         with col1:
-            # ✅ REVISI 2: DEFAULT VALUE DISesuaikan DATA LAPANGAN
-            suction_pressure = st.number_input("Suction Pressure [bar]", min_value=0.0, 
-                                               value=0.44, step=0.01, key="suction_p")
-            discharge_pressure = st.number_input("Discharge Pressure [bar]", min_value=0.0, 
-                                                 value=3.73, step=0.01, key="discharge_p")
-            delta_p = discharge_pressure - suction_pressure
-            st.metric("ΔP", f"{delta_p:.2f} bar")
-        
+            rated_flow = st.number_input("Rated Flow Q [m³/h]", min_value=0.0, 
+                                         value=100.0, step=1.0, key="rated_flow")
+            rated_head = st.number_input("Rated Head H [m]", min_value=0.0, 
+                                         value=59.73, step=0.1, key="rated_head")
         with col2:
-            flow_rate = st.number_input("Flow Rate [m³/h]", min_value=0.0, value=100.0, 
-                                        step=1.0, key="flow_rate")
-            motor_power = st.number_input("Motor Power [kW]", min_value=0.0, 
-                                          value=15.0, step=0.5, key="motor_power")
-            fluid_temp = st.number_input("Fluid Temperature [°C]", min_value=0, max_value=100, 
-                                         value=40, step=1, key="fluid_temp")
-        
-        with col3:
-            fluid_props = FLUID_PROPERTIES[fluid_type]
-            sg = st.number_input("Specific Gravity", min_value=0.5, max_value=1.5, 
-                                 value=fluid_props["sg"], step=0.01, key="sg_input")
-            st.caption(f"Auto dari {fluid_type}")
-            if delta_p > 0 and sg > 0:
-                head_calc = delta_p * 10.2 / sg
-                st.metric("Head Aktual", f"{head_calc:.1f} m")
-        
-        # ✅ REVISI 3: DATA DESAIN DENGAN AUTO-ESTIMASI
-        with st.expander("📋 Data Nameplate (Wajib)", expanded=True):
-            st.caption("💡 Kosongkan BEP & NPSHr untuk estimasi otomatis")
+            bep_efficiency = st.number_input("BEP Efficiency [%] (Optional)", 
+                                             min_value=0, max_value=100, value=0, step=1,
+                                             key="bep_eff",
+                                             help="Kosongkan/isi 0 untuk estimasi otomatis")
+            npsh_required = st.number_input("NPSH Required [m] (Optional)", 
+                                            min_value=0.0, value=0.0, step=0.1,
+                                            key="npshr",
+                                            help="Kosongkan/isi 0 untuk estimasi otomatis")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                rated_flow = st.number_input("Rated Flow Q [m³/h]", min_value=0.0, 
-                                             value=100.0, step=1.0, key="rated_flow")
-                rated_head = st.number_input("Rated Head H [m]", min_value=0.0, 
-                                             value=59.73, step=0.1, key="rated_head")
-            with col2:
-                # ✅ REVISI 4: DEFAULT 0 = AUTO-ESTIMATE
-                bep_efficiency = st.number_input("BEP Efficiency [%] (Optional)", 
-                                                 min_value=0, max_value=100, value=0, step=1,
-                                                 key="bep_eff",
-                                                 help="Kosongkan/isi 0 untuk estimasi otomatis")
-                npsh_required = st.number_input("NPSH Required [m] (Optional)", 
-                                                min_value=0.0, value=0.0, step=0.1,
-                                                key="npshr",
-                                                help="Kosongkan/isi 0 untuk estimasi otomatis")
-                
-                # ✅ REVISI 5: TRIGGER AUTO-ESTIMATION
-                estimation_notes = []
-                if bep_efficiency <= 0:
-                    bep_efficiency = estimate_bep_efficiency(rated_flow, rated_head, motor_power, sg)
-                    estimation_notes.append(f"BEP diestimasi: {bep_efficiency:.1f}%")
-                if npsh_required <= 0:
-                    npsh_required = estimate_npshr_conservative(rated_flow)
-                    estimation_notes.append(f"NPSHr diestimasi: {npsh_required:.1f}m")
-                
-                if estimation_notes:
-                    st.info("🔧 **Auto-Estimation:** " + " | ".join(estimation_notes))
-        
-        # ✅ REVISI 6: OBSERVASI JADI OPTIONAL
-        with st.expander("🔍 Observasi Lapangan (Optional)", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                noise_type = st.radio("Jenis Noise", ["Normal", "Whining", "Grinding", "Crackling"], 
-                                      index=0, key="noise_type")
-                fluid_condition = st.radio("Kondisi Fluida", ["Jernih", "Agak keruh", "Keruh"], 
-                                           index=0, key="fluid_cond")
-            with col2:
-                leakage = st.radio("Kebocoran Seal", ["Tidak ada", "Minor", "Mayor"], 
-                                   index=0, key="leakage")
-                vibration_qual = st.radio("Getaran (kualitatif)", ["Tidak terasa", "Halus", "Jelas", "Kuat"], 
-                                          index=0, key="vib_qual")
-        
-        analyze_hyd_disabled = suction_pressure >= discharge_pressure
-        
-        if st.button("💧 Generate Diagnosis", type="primary", key="run_hyd", 
-                     disabled=analyze_hyd_disabled):
+            # ✅ TRIGGER AUTO-ESTIMATION
+            estimation_notes = []
+            if bep_efficiency <= 0:
+                bep_efficiency = estimate_bep_efficiency(rated_flow, rated_head, motor_power, sg)
+                estimation_notes.append(f"BEP diestimasi: {bep_efficiency:.1f}%")
+            if npsh_required <= 0:
+                npsh_required = estimate_npshr_conservative(rated_flow)
+                estimation_notes.append(f"NPSHr diestimasi: {npsh_required:.1f}m")
             
-            if suction_pressure >= discharge_pressure:
-                st.error("❌ Suction pressure tidak boleh >= Discharge pressure")
-            else:
-                with st.spinner("Menganalisis performa hidrolik..."):
-                    hyd_calc = calculate_hydraulic_parameters(
-                        suction_pressure, discharge_pressure, flow_rate, 
-                        motor_power, sg, fluid_temp
-                    )
-                    
-                    design_params = {
-                        "rated_flow_m3h": rated_flow,
-                        "rated_head_m": rated_head,
-                        "bep_efficiency": bep_efficiency,
-                        "npsh_required_m": npsh_required
-                    }
-                    
-                    observations = {
-                        "noise_type": noise_type if 'noise_type' in locals() else "Normal",
-                        "fluid_condition": fluid_condition if 'fluid_condition' in locals() else "Jernih"
-                    }
-                    
-                    context = {
-                        "flow_aktual": flow_rate,
-                        "suction_pressure_bar": suction_pressure
-                    }
-                    
-                    hyd_result = diagnose_hydraulic_single_point(
-                        hyd_calc, design_params, fluid_props, observations, context
-                    )
-                    
-                    st.session_state.hyd_result = hyd_result
-                    st.session_state.hyd_data = {
-                        "measurements": {
-                            "suction_pressure": suction_pressure,
-                            "discharge_pressure": discharge_pressure,
-                            "flow_rate": flow_rate,
-                            "motor_power": motor_power
-                        },
-                        "fluid_type": fluid_type,
-                        "sg": sg,
-                        "head_m": hyd_calc["head_m"],
-                        "efficiency_percent": hyd_calc["efficiency_percent"],
-                        "npsh_margin_m": hyd_result["details"].get("npsh_margin_m", 0),
-                        "diagnosis": hyd_result["diagnosis"],
-                        "confidence": hyd_result["confidence"],
-                        "severity": hyd_result["severity"],
-                        "estimation_note": " | ".join(estimation_notes) if estimation_notes else "Data OEM lengkap"
-                    }
-                    
-                    st.success(f"✅ {hyd_result['diagnosis']} ({hyd_result['confidence']}%)")
-        
-        if "hyd_result" in st.session_state:
-            result = st.session_state.hyd_result
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("Diagnosis", result["diagnosis"], delta=f"{result['confidence']}%")
-            with col_b:
-                st.metric("Severity", {"Low":"🟢","Medium":"🟠","High":"🔴"}.get(result["severity"],"⚪"))
-            with col_c:
-                st.metric("Domain", "Hydraulic")
-            
-            if result["diagnosis"] != "NORMAL_OPERATION":
-                st.info(get_hydraulic_recommendation(result["diagnosis"], fluid_type, result["severity"]))
-            
-            npsh_margin = result["details"].get("npsh_margin_m", 999)
-            if npsh_margin < 0.5:
-                st.warning(f"""
-                ⚠️ **NPSH Margin Critical**: {npsh_margin:.2f} m
-                • Risk of cavitation untuk {fluid_type} (vapor pressure tinggi)
-                • Rekomendasi: tingkatkan suction pressure atau turunkan fluid temperature
-                """)
-            
-            # ✅ REVISI 7: DISCLAIMER ESTIMASI
             if estimation_notes:
-                st.caption(f"📝 **Note:** {st.session_state.hyd_data.get('estimation_note', '')}")
+                st.info("🔧 **Auto-Estimation:** " + " | ".join(estimation_notes))
+    
+    # ✅ OBSERVASI JADI OPTIONAL
+    with st.expander("🔍 Observasi Lapangan (Optional)", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            noise_type = st.radio("Jenis Noise", ["Normal", "Whining", "Grinding", "Crackling"], 
+                                  index=0, key="noise_type")
+            fluid_condition = st.radio("Kondisi Fluida", ["Jernih", "Agak keruh", "Keruh"], 
+                                       index=0, key="fluid_cond")
+        with col2:
+            leakage = st.radio("Kebocoran Seal", ["Tidak ada", "Minor", "Mayor"], 
+                               index=0, key="leakage")
+            vibration_qual = st.radio("Getaran (kualitatif)", ["Tidak terasa", "Halus", "Jelas", "Kuat"], 
+                                      index=0, key="vib_qual")
+    
+    analyze_hyd_disabled = suction_pressure >= discharge_pressure
+    
+    if st.button("💧 Generate Diagnosis", type="primary", key="run_hyd", 
+                 disabled=analyze_hyd_disabled):
+        
+        if suction_pressure >= discharge_pressure:
+            st.error("❌ Suction pressure tidak boleh >= Discharge pressure")
+        else:
+            with st.spinner("Menganalisis performa hidrolik..."):
+                hyd_calc = calculate_hydraulic_parameters(
+                    suction_pressure, discharge_pressure, flow_rate, 
+                    motor_power, sg, fluid_temp
+                )
+                
+                design_params = {
+                    "rated_flow_m3h": rated_flow,
+                    "rated_head_m": rated_head,
+                    "bep_efficiency": bep_efficiency,
+                    "npsh_required_m": npsh_required
+                }
+                
+                observations = {
+                    "noise_type": noise_type if 'noise_type' in locals() else "Normal",
+                    "fluid_condition": fluid_condition if 'fluid_condition' in locals() else "Jernih"
+                }
+                
+                context = {
+                    "flow_aktual": flow_rate,
+                    "suction_pressure_bar": suction_pressure
+                }
+                
+                hyd_result = diagnose_hydraulic_single_point(
+                    hyd_calc, design_params, fluid_props, observations, context
+                )
+                
+                st.session_state.hyd_result = hyd_result
+                st.session_state.hyd_data = {
+                    "measurements": {
+                        "suction_pressure": suction_pressure,
+                        "discharge_pressure": discharge_pressure,
+                        "flow_rate": flow_rate,
+                        "motor_power": motor_power
+                    },
+                    "fluid_type": fluid_type,
+                    "sg": sg,
+                    "head_m": hyd_calc["head_m"],
+                    "efficiency_percent": hyd_calc["efficiency_percent"],
+                    "npsh_margin_m": hyd_result["details"].get("npsh_margin_m", 0),
+                    "diagnosis": hyd_result["diagnosis"],
+                    "confidence": hyd_result["confidence"],
+                    "severity": hyd_result["severity"],
+                    "estimation_note": " | ".join(estimation_notes) if estimation_notes else "Data OEM lengkap"
+                }
+                
+                st.success(f"✅ {hyd_result['diagnosis']} ({hyd_result['confidence']}%)")
+    
+    # ✅ DISPLAY RESULT
+    if "hyd_result" in st.session_state:
+        result = st.session_state.hyd_result
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("Diagnosis", result["diagnosis"], delta=f"{result['confidence']}%")
+        with col_b:
+            st.metric("Severity", {"Low":"🟢","Medium":"🟠","High":"🔴"}.get(result["severity"],"⚪"))
+        with col_c:
+            st.metric("Domain", "Hydraulic")
+        
+        if result["diagnosis"] != "NORMAL_OPERATION":
+            st.info(get_hydraulic_recommendation(result["diagnosis"], fluid_type, result["severity"]))
+        
+        npsh_margin = result["details"].get("npsh_margin_m", 999)
+        if npsh_margin < 0.5:
+            st.warning(f"""
+            ⚠️ **NPSH Margin Critical**: {npsh_margin:.2f} m
+            • Risk of cavitation untuk {fluid_type} (vapor pressure tinggi)
+            • Rekomendasi: tingkatkan suction pressure atau turunkan fluid temperature
+            """)
+        
+        if estimation_notes:
+            st.caption(f"📝 **Note:** {st.session_state.hyd_data.get('estimation_note', '')}")
     
     # ========================================================================
     # TAB 3: ELECTRICAL CONDITION ANALYSIS (TIDAK DIUBAH)
