@@ -1137,14 +1137,25 @@ def main():
                 return min(90, max(50, eff))  # Clamp ke range realistis 50-90%
             return 75  # Default fallback
         
-        def estimate_npshr_conservative(Q_m3h):
-            """Estimasi konservatif NPSHr berdasarkan flow rate"""
+        def estimate_npshr_conservative(Q_m3h, fluid_type=None, vapor_pressure_kpa=None):
+            """
+            Estimasi NPSHr dengan pertimbangan vapor pressure fluida
+            """
+            # Base estimate dari flow
             if Q_m3h < 50:
-                return 3.0
+                base_npshr = 3.0
             elif Q_m3h < 200:
-                return 4.0  # Konservatif untuk Q ~100 m³/h
+                base_npshr = 4.0
             else:
-                return 5.5
+                base_npshr = 5.5
+    
+    # ✅ Tambahan: koreksi untuk fluida vapor pressure tinggi
+    if vapor_pressure_kpa and vapor_pressure_kpa > 30:  # Pertalite/Pertamax
+        # Tambahkan 3-5 m untuk kompensasi risiko kavitasi
+        correction = min(5.0, (vapor_pressure_kpa - 30) * 0.1)
+        return base_npshr + correction
+    
+    return base_npshr
         
         steady_verified = True
         st.subheader("📊 Data Primer Hidrolik")
